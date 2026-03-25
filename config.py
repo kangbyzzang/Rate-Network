@@ -14,7 +14,7 @@ ADMIN_IDS = [670738196]
 WEBSITE_URL = "https://ratenetwork.io"
 
 # 미니앱 URL - GitHub Pages 배포 후 변경
-MINIAPP_URL = "https://kangbyzzang.github.io/rate-network"
+MINIAPP_URL = "https://kangbyzzang.github.io/Rate-Network"
 
 # 채굴 설정
 MAX_DAILY_ADS = 10
