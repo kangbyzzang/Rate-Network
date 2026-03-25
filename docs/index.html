@@ -175,31 +175,26 @@
     <div id="status"></div>
   </div>
 
-  <!-- ══════════════════════════════════════════════
-       Monetag 광고 스크립트
-       ※ YOUR_MONETAG_ZONE_ID 를 실제 Monetag 존 ID로 교체하세요
-       ══════════════════════════════════════════════ -->
-  <script>
-    // Monetag 설정 (실제 Zone ID로 교체 필요)
-    const MONETAG_ZONE_ID = "YOUR_MONETAG_ZONE_ID";
+  <!-- Monetag Rewarded Interstitial 스크립트 -->
+  <script src="//thubanoa.com/1?z=10784949" async></script>
 
+  <script>
     // Telegram WebApp 초기화
     const tg = window.Telegram.WebApp;
     tg.ready();
     tg.expand();
 
     // UI 요소
-    const btn      = document.getElementById("main-btn");
-    const status   = document.getElementById("status");
-    const title    = document.getElementById("card-title");
-    const desc     = document.getElementById("card-desc");
-    const icon     = document.getElementById("mining-icon");
-    const step1    = document.getElementById("step1");
-    const step2    = document.getElementById("step2");
-    const step3    = document.getElementById("step3");
+    const btn   = document.getElementById("main-btn");
+    const status = document.getElementById("status");
+    const title  = document.getElementById("card-title");
+    const desc   = document.getElementById("card-desc");
+    const icon   = document.getElementById("mining-icon");
+    const step1  = document.getElementById("step1");
+    const step2  = document.getElementById("step2");
+    const step3  = document.getElementById("step3");
 
-    let adWatched  = false;
-    let adLoaded   = false;
+    let adWatched = false;
 
     // ── 단계 표시 ──────────────────────────────────
     function setStep(n) {
@@ -219,42 +214,27 @@
       if (adWatched) return;
 
       btn.disabled = true;
-      setStep(1);
-      setStatus('<span class="spinner"></span>Loading ad...', "loading");
-
-      // Monetag 인터스티셜 광고 로드 & 표시
-      loadMonetag();
-    }
-
-    // ── Monetag 광고 로드 ───────────────────────────
-    function loadMonetag() {
-      // Monetag Show Interstitial (실제 연동 시 아래 주석 해제 후 zone ID 설정)
-      /*
-      (function(d, z, s) {
-        s.src = 'https://glizauvo.net/' + z;
-        try { (document.body || document.documentElement).appendChild(s); }
-        catch(e) {}
-      })(document, MONETAG_ZONE_ID, document.createElement('script'));
-      */
-
-      // ── 개발/테스트용 시뮬레이션 (Monetag 연동 전 사용) ──
-      // 실제 Monetag 연동 후에는 이 블록을 제거하고 위 코드 사용
-      console.log("Ad simulation: 3초 후 완료");
-      title.textContent = "Ad is playing...";
-      desc.innerHTML    = "Please watch the full ad to earn your reward.";
-      icon.textContent  = "📺";
       setStep(2);
+      title.textContent = "Ad is playing...";
+      desc.innerHTML = "Please watch the full ad to earn your reward.";
+      icon.textContent = "📺";
       setStatus('<span class="spinner"></span>Ad playing... please wait', "loading");
 
-      setTimeout(() => {
+      // Monetag Rewarded Interstitial 호출
+      show_10784949().then(() => {
         onAdCompleted();
-      }, 3000); // 테스트: 3초 후 자동 완료
-      // ── 시뮬레이션 끝 ──
+      }).catch(() => {
+        // 광고 로드 실패 시
+        setStatus("❌ Ad failed to load. Please try again.", "error");
+        btn.disabled = false;
+        title.textContent = "Watch an Ad";
+        desc.innerHTML = "Watch a short video ad to earn RATE coins.<br/>Up to <strong>10 ads</strong> per day (UTC reset).";
+        icon.textContent = "⛏️";
+        setStep(1);
+      });
     }
 
-    // ── Monetag 광고 완료 콜백 ──────────────────────
-    // 실제 Monetag SDK 에서 이 함수를 콜백으로 등록하세요:
-    // window.monetagAdCompleted = onAdCompleted;
+    // ── 광고 완료 콜백 ──────────────────────────────
     function onAdCompleted() {
       adWatched = true;
       setStep(3);
@@ -263,12 +243,11 @@
       desc.innerHTML    = "Great job! Sending your reward...";
       setStatus('<span class="spinner"></span>Confirming reward...', "loading");
 
-      // 봇에게 광고 완료 전송
-      sendRewardToBo();
+      sendRewardToBot();
     }
 
     // ── 봇에 결과 전송 ──────────────────────────────
-    function sendRewardToBo() {
+    function sendRewardToBot() {
       try {
         const payload = JSON.stringify({
           action: "ad_completed",
@@ -276,7 +255,6 @@
         });
         tg.sendData(payload);
 
-        // sendData 후 미니앱이 자동 닫힘
         setStatus("✅ Reward sent! Check your balance.", "success");
         btn.textContent = "✅ Done!";
         btn.className   = "btn btn-success";
