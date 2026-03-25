@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RATE NETWORK - Mining</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    .logo {
+      font-size: 2.2rem;
+      font-weight: 900;
+      letter-spacing: 2px;
+      background: linear-gradient(135deg, #f0c040, #e87d20);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+    }
+
+    .subtitle {
+      font-size: 0.9rem;
+      color: #8b949e;
+      margin-bottom: 40px;
+    }
+
+    .card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 16px;
+      padding: 32px 28px;
+      width: 100%;
+      max-width: 340px;
+      text-align: center;
+    }
+
+    .mining-icon {
+      font-size: 3.5rem;
+      margin-bottom: 16px;
+    }
+
+    .card h2 {
+      font-size: 1.3rem;
+      margin-bottom: 10px;
+      color: #f0f6fc;
+    }
+
+    .card p {
+      font-size: 0.88rem;
+      color: #8b949e;
+      line-height: 1.6;
+      margin-bottom: 28px;
+    }
+
+    .btn {
+      display: inline-block;
+      width: 100%;
+      padding: 14px 0;
+      border-radius: 12px;
+      border: none;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #f0c040, #e87d20);
+      color: #0d1117;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      opacity: 0.9;
+      transform: translateY(-1px);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .btn-success {
+      background: linear-gradient(135deg, #3fb950, #2ea043);
+      color: #ffffff;
+    }
+
+    /* 광고 컨테이너 */
+    #ad-container {
+      display: none;
+      width: 100%;
+      margin-bottom: 20px;
+    }
+
+    /* 상태 메시지 */
+    #status {
+      margin-top: 16px;
+      font-size: 0.85rem;
+      color: #8b949e;
+      min-height: 24px;
+    }
+
+    .status-success { color: #3fb950 !important; }
+    .status-error   { color: #f85149 !important; }
+    .status-loading { color: #f0c040 !important; }
+
+    /* 로딩 스피너 */
+    .spinner {
+      display: inline-block;
+      width: 18px; height: 18px;
+      border: 3px solid #30363d;
+      border-top-color: #f0c040;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .step-indicator {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+
+    .step {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: #30363d;
+    }
+
+    .step.active { background: #f0c040; }
+    .step.done   { background: #3fb950; }
+  </style>
+</head>
+<body>
+
+  <div class="logo">RATE NETWORK</div>
+  <div class="subtitle">⛏️ Mine RATE Coins</div>
+
+  <div class="card">
+    <div class="step-indicator">
+      <div class="step" id="step1"></div>
+      <div class="step" id="step2"></div>
+      <div class="step" id="step3"></div>
+    </div>
+
+    <div class="mining-icon" id="mining-icon">⛏️</div>
+    <h2 id="card-title">Watch an Ad</h2>
+    <p id="card-desc">
+      Watch a short video ad to earn RATE coins.<br/>
+      Up to <strong>10 ads</strong> per day (UTC reset).
+    </p>
+
+    <div id="ad-container"></div>
+
+    <button class="btn btn-primary" id="main-btn" onclick="startMining()">
+      ▶️ Watch Ad &amp; Mine
+    </button>
+
+    <div id="status"></div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       Monetag 광고 스크립트
+       ※ YOUR_MONETAG_ZONE_ID 를 실제 Monetag 존 ID로 교체하세요
+       ══════════════════════════════════════════════ -->
+  <script>
+    // Monetag 설정 (실제 Zone ID로 교체 필요)
+    const MONETAG_ZONE_ID = "YOUR_MONETAG_ZONE_ID";
+
+    // Telegram WebApp 초기화
+    const tg = window.Telegram.WebApp;
+    tg.ready();
+    tg.expand();
+
+    // UI 요소
+    const btn      = document.getElementById("main-btn");
+    const status   = document.getElementById("status");
+    const title    = document.getElementById("card-title");
+    const desc     = document.getElementById("card-desc");
+    const icon     = document.getElementById("mining-icon");
+    const step1    = document.getElementById("step1");
+    const step2    = document.getElementById("step2");
+    const step3    = document.getElementById("step3");
+
+    let adWatched  = false;
+    let adLoaded   = false;
+
+    // ── 단계 표시 ──────────────────────────────────
+    function setStep(n) {
+      [step1, step2, step3].forEach((s, i) => {
+        s.className = "step" + (i + 1 < n ? " done" : i + 1 === n ? " active" : "");
+      });
+    }
+
+    // ── 상태 메시지 ────────────────────────────────
+    function setStatus(msg, type = "") {
+      status.innerHTML = msg;
+      status.className = type ? `status-${type}` : "";
+    }
+
+    // ── 광고 시청 시작 ──────────────────────────────
+    function startMining() {
+      if (adWatched) return;
+
+      btn.disabled = true;
+      setStep(1);
+      setStatus('<span class="spinner"></span>Loading ad...', "loading");
+
+      // Monetag 인터스티셜 광고 로드 & 표시
+      loadMonetag();
+    }
+
+    // ── Monetag 광고 로드 ───────────────────────────
+    function loadMonetag() {
+      // Monetag Show Interstitial (실제 연동 시 아래 주석 해제 후 zone ID 설정)
+      /*
+      (function(d, z, s) {
+        s.src = 'https://glizauvo.net/' + z;
+        try { (document.body || document.documentElement).appendChild(s); }
+        catch(e) {}
+      })(document, MONETAG_ZONE_ID, document.createElement('script'));
+      */
+
+      // ── 개발/테스트용 시뮬레이션 (Monetag 연동 전 사용) ──
+      // 실제 Monetag 연동 후에는 이 블록을 제거하고 위 코드 사용
+      console.log("Ad simulation: 3초 후 완료");
+      title.textContent = "Ad is playing...";
+      desc.innerHTML    = "Please watch the full ad to earn your reward.";
+      icon.textContent  = "📺";
+      setStep(2);
+      setStatus('<span class="spinner"></span>Ad playing... please wait', "loading");
+
+      setTimeout(() => {
+        onAdCompleted();
+      }, 3000); // 테스트: 3초 후 자동 완료
+      // ── 시뮬레이션 끝 ──
+    }
+
+    // ── Monetag 광고 완료 콜백 ──────────────────────
+    // 실제 Monetag SDK 에서 이 함수를 콜백으로 등록하세요:
+    // window.monetagAdCompleted = onAdCompleted;
+    function onAdCompleted() {
+      adWatched = true;
+      setStep(3);
+      icon.textContent  = "✅";
+      title.textContent = "Ad Complete!";
+      desc.innerHTML    = "Great job! Sending your reward...";
+      setStatus('<span class="spinner"></span>Confirming reward...', "loading");
+
+      // 봇에게 광고 완료 전송
+      sendRewardToBo();
+    }
+
+    // ── 봇에 결과 전송 ──────────────────────────────
+    function sendRewardToBo() {
+      try {
+        const payload = JSON.stringify({
+          action: "ad_completed",
+          timestamp: Date.now(),
+        });
+        tg.sendData(payload);
+
+        // sendData 후 미니앱이 자동 닫힘
+        setStatus("✅ Reward sent! Check your balance.", "success");
+        btn.textContent = "✅ Done!";
+        btn.className   = "btn btn-success";
+        btn.disabled    = false;
+        btn.onclick     = () => tg.close();
+
+      } catch (err) {
+        console.error("sendData error:", err);
+        setStatus("❌ Error sending reward. Please try again.", "error");
+        btn.disabled = false;
+        btn.textContent = "▶️ Watch Ad & Mine";
+        btn.onclick = startMining;
+        adWatched = false;
+        setStep(1);
+      }
+    }
+
+    // 초기 단계 설정
+    setStep(1);
+  </script>
+
+</body>
+</html>
