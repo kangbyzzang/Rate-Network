@@ -287,7 +287,7 @@
     }
 
     // ── 광고 완료 콜백 ──────────────────────────────
-    function onAdCompleted() {
+    async function onAdCompleted() {
       adWatched = true;
       setStep(3);
       icon.textContent  = "✅";
@@ -296,13 +296,37 @@
       setStatus('<span class="spinner"></span>Processing...', "loading");
 
       try {
-        tg.sendData(JSON.stringify({
-          action: "ad_completed",
-          ymid: currentYmid,
-          timestamp: Date.now(),
-        }));
+        const res = await fetch("https://worker-production-7fdd.up.railway.app/reward", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: userId,
+            secret: "ratenetwork_secret_2026",
+          }),
+        });
+        const data = await res.json();
+
+        if (data.ok) {
+          icon.textContent  = "🎉";
+          title.textContent = "Reward Sent!";
+          desc.innerHTML    = `You earned <strong>+${data.reward.toFixed(6)} RATE</strong>!<br/>Check your Telegram for details.`;
+          setStatus("✅ Success! Check Telegram.", "success");
+          btn.textContent = "✅ Done!";
+          btn.className   = "btn btn-success";
+          btn.disabled    = false;
+          btn.onclick     = () => tg.close();
+        } else if (data.error === "daily_limit") {
+          setStatus("⏰ Daily limit reached! Come back tomorrow.", "error");
+          btn.disabled = false;
+          btn.textContent = "▶️ Watch Ad & Mine";
+          btn.onclick = startMining;
+          adWatched = false;
+          setStep(1);
+        } else {
+          throw new Error(data.error || "unknown");
+        }
       } catch (err) {
-        setStatus("❌ Error. Please try again.", "error");
+        setStatus("❌ Error sending reward. Please try again.", "error");
         btn.disabled = false;
         btn.textContent = "▶️ Watch Ad & Mine";
         btn.onclick = startMining;

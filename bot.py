@@ -37,9 +37,75 @@ db = FirebaseClient()
 flask_app = Flask(__name__)
 
 
+@flask_app.after_request
+def add_cors(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    return response
+
+
 @flask_app.route("/health")
 def health():
     return jsonify({"status": "ok"})
+
+
+@flask_app.route("/reward", methods=["POST", "OPTIONS"])
+def reward():
+    if request.method == "OPTIONS":
+        return jsonify({"ok": True})
+
+    data = request.get_json(silent=True) or {}
+    user_id = str(data.get("user_id", ""))
+    secret  = data.get("secret", "")
+
+    if secret != POSTBACK_SECRET:
+        return jsonify({"error": "unauthorized"}), 401
+
+    if not user_id:
+        return jsonify({"error": "missing user_id"}), 400
+
+    user_data = db.get_user(user_id)
+    if not user_data:
+        return jsonify({"error": "user not found"}), 404
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today_count = get_today_ad_count(user_data)
+
+    if today_count >= MAX_DAILY_ADS:
+        return jsonify({"error": "daily_limit", "message": "Daily limit reached!"}), 200
+
+    stats = db.get_global_stats()
+    total_mined_global = stats.get("total_mined", 0.0)
+    reward_amount = calculate_reward(total_mined_global)
+
+    if reward_amount <= 0:
+        return jsonify({"error": "supply_exhausted"}), 200
+
+    new_balance = user_data.get("balance", 0.0) + reward_amount
+    new_personal = user_data.get("total_mined_personal", 0.0) + reward_amount
+    new_count = today_count + 1
+
+    db.update_user(user_id, {
+        "balance": new_balance,
+        "total_mined_personal": new_personal,
+        "today_ad_count": new_count,
+        "last_reset_date": today,
+    })
+    db.add_to_total_mined(reward_amount)
+
+    remaining = MAX_DAILY_ADS - new_count
+    send_telegram_message_direct(
+        user_id,
+        f"✅ *Mining Reward!*\n\n"
+        f"💰 Earned: `+{reward_amount:.6f}` RATE\n"
+        f"💼 Balance: `{new_balance:.6f}` RATE\n"
+        f"📊 Today: `{new_count}/{MAX_DAILY_ADS}` ads\n"
+        f"⏳ Remaining today: `{remaining}` ads"
+    )
+
+    logger.info(f"[REWARD] user={user_id} reward={reward_amount}")
+    return jsonify({"ok": True, "reward": reward_amount, "balance": new_balance})
 
 
 def send_telegram_message_direct(user_id: str, text: str):
