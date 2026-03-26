@@ -176,7 +176,7 @@
   </div>
 
   <!-- Monetag Rewarded Interstitial 스크립트 -->
-  <script src="//thubanoa.com/1?z=10784949" async></script>
+  <script src="//thubanoa.com/1?z=10784949"></script>
 
   <script>
     // Telegram WebApp 초기화
@@ -195,6 +195,8 @@
     const step3  = document.getElementById("step3");
 
     let adWatched = false;
+    let adReady   = false;
+    const userId  = tg.initDataUnsafe?.user?.id?.toString() || "unknown";
 
     // ── 단계 표시 ──────────────────────────────────
     function setStep(n) {
@@ -209,6 +211,26 @@
       status.className = type ? `status-${type}` : "";
     }
 
+    // ── 광고 프리로드 (페이지 로드 시 미리 준비) ──────
+    function preloadAd() {
+      if (typeof show_10784949 === "undefined") return;
+      show_10784949({ type: "preload", ymid: userId })
+        .then(() => {
+          adReady = true;
+          btn.disabled = false;
+          setStatus("✅ Ad ready. Press the button!", "success");
+          setTimeout(() => setStatus(""), 2000);
+        })
+        .catch(() => { adReady = false; });
+    }
+
+    // SDK 로드 완료 후 프리로드 시작
+    btn.disabled = true;
+    setStatus('<span class="spinner"></span>Loading ad...', "loading");
+    window.addEventListener("load", () => {
+      setTimeout(preloadAd, 500);
+    });
+
     // ── 광고 시청 시작 ──────────────────────────────
     function startMining() {
       if (adWatched) return;
@@ -220,11 +242,6 @@
       icon.textContent = "📺";
       setStatus('<span class="spinner"></span>Ad playing... please wait', "loading");
 
-      // Monetag Rewarded Interstitial 호출 (15초 타임아웃)
-      const adTimeout = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("timeout")), 15000)
-      );
-
       if (typeof show_10784949 === "undefined") {
         setStatus("❌ Ad script not loaded. Please try again.", "error");
         btn.disabled = false;
@@ -235,7 +252,12 @@
         return;
       }
 
-      Promise.race([show_10784949(), adTimeout]).then(() => {
+      // 30초 타임아웃
+      const adTimeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("timeout")), 30000)
+      );
+
+      Promise.race([show_10784949({ ymid: userId }), adTimeout]).then(() => {
         onAdCompleted();
       }).catch((err) => {
         const msg = err?.message === "timeout"
