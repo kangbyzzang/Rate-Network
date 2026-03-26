@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import threading
+import asyncio
 from datetime import datetime, timezone
 
 from flask import Flask, request, jsonify
@@ -359,10 +360,23 @@ async def web_app_data_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     if action != "ad_completed":
         return
 
-    # ── Monetag Postback ymid 검증 ──
+    # ── Monetag Postback ymid 검증 (최대 10초 재시도) ──
     ymid = payload.get("ymid", "")
-    if not ymid or not db.check_and_consume_ymid(ymid):
-        logger.warning(f"[AD] Invalid or unverified ymid from {user_id}: {ymid}")
+    if not ymid:
+        logger.warning(f"[AD] Missing ymid from {user_id}")
+        await update.message.reply_text("❌ Ad verification failed. Please try again.")
+        return
+
+    verified = False
+    for attempt in range(5):
+        if db.check_and_consume_ymid(ymid):
+            verified = True
+            break
+        logger.info(f"[AD] ymid not yet verified, retrying ({attempt+1}/5): {ymid}")
+        await asyncio.sleep(2)
+
+    if not verified:
+        logger.warning(f"[AD] ymid verification failed after retries: {ymid}")
         await update.message.reply_text(
             "❌ Ad verification failed. Please watch the full ad and try again."
         )

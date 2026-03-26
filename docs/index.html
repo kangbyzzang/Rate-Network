@@ -299,19 +299,10 @@
       setStep(3);
       icon.textContent  = "✅";
       title.textContent = "Ad Complete!";
-      desc.innerHTML    = "Great job! Verifying your reward...";
-
-      let countdown = 5;
-      function tick() {
-        setStatus(`<span class="spinner"></span>Verifying... (${countdown}s)`, "loading");
-        if (countdown <= 0) {
-          sendRewardToBot();
-        } else {
-          countdown--;
-          setTimeout(tick, 1000);
-        }
-      }
-      tick();
+      desc.innerHTML    = "Great job! Sending your reward...";
+      setStatus('<span class="spinner"></span>Processing reward...', "loading");
+      // 즉시 전송 (미니앱이 이동되기 전에)
+      sendRewardToBot();
     }
 
     // ── 봇에 결과 전송 ──────────────────────────────
