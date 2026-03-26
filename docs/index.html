@@ -270,21 +270,13 @@
         return;
       }
 
-      // 광고마다 고유한 ymid 생성
-      currentYmid = generateYmid();
+      // ymid = userId_timestamp (서버에서 유저 식별용)
+      currentYmid = userId + "_" + Date.now();
 
-      // 30초 타임아웃
-      const adTimeout = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("timeout")), 30000)
-      );
-
-      Promise.race([show_10784949({ ymid: currentYmid }), adTimeout]).then(() => {
+      show_10784949({ ymid: currentYmid }).then(() => {
         onAdCompleted();
-      }).catch((err) => {
-        const msg = err?.message === "timeout"
-          ? "⏱️ Ad timed out. Please try again."
-          : "❌ Ad failed to load. Please try again.";
-        setStatus(msg, "error");
+      }).catch(() => {
+        setStatus("❌ Ad failed. Please try again.", "error");
         btn.disabled = false;
         title.textContent = "Watch an Ad";
         desc.innerHTML = "Watch a short video ad to earn RATE coins.<br/>Up to <strong>10 ads</strong> per day (UTC reset).";
@@ -298,38 +290,14 @@
       adWatched = true;
       setStep(3);
       icon.textContent  = "✅";
-      title.textContent = "Ad Complete!";
-      desc.innerHTML    = "Great job! Sending your reward...";
-      setStatus('<span class="spinner"></span>Processing reward...', "loading");
-      // 즉시 전송 (미니앱이 이동되기 전에)
-      sendRewardToBot();
-    }
+      title.textContent = "Ad Watched!";
+      desc.innerHTML    = "Your reward will arrive in Telegram shortly!";
+      setStatus("⏳ Reward incoming... check Telegram!", "success");
 
-    // ── 봇에 결과 전송 ──────────────────────────────
-    function sendRewardToBot() {
-      try {
-        const payload = JSON.stringify({
-          action: "ad_completed",
-          ymid: currentYmid,
-          timestamp: Date.now(),
-        });
-        tg.sendData(payload);
-
-        setStatus("✅ Reward sent! Check your balance.", "success");
-        btn.textContent = "✅ Done!";
-        btn.className   = "btn btn-success";
-        btn.disabled    = false;
-        btn.onclick     = () => tg.close();
-
-      } catch (err) {
-        console.error("sendData error:", err);
-        setStatus("❌ Error sending reward. Please try again.", "error");
-        btn.disabled = false;
-        btn.textContent = "▶️ Watch Ad & Mine";
-        btn.onclick = startMining;
-        adWatched = false;
-        setStep(1);
-      }
+      btn.textContent = "✅ Done!";
+      btn.className   = "btn btn-success";
+      btn.disabled    = false;
+      btn.onclick     = () => tg.close();
     }
 
     // 초기 단계 설정
