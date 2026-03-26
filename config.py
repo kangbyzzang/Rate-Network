@@ -11,7 +11,7 @@ FIREBASE_PROJECT_ID = "rate-network-86c53"
 ADMIN_IDS = [670738196]
 
 # 공식 웹사이트 URL (나중에 변경)
-WEBSITE_URL = "https://ratenetwork.io"
+WEBSITE_URL = "https://rate-network-the-future-of-decentralized-finance-734909496657.us-west1.run.app/"
 
 # 미니앱 URL - GitHub Pages 배포 후 변경
 MINIAPP_URL = "https://kangbyzzang.github.io/Rate-Network"
