@@ -89,8 +89,9 @@ def main_menu_keyboard(miniapp_url: str) -> InlineKeyboardMarkup:
         [InlineKeyboardButton("⛏️ Mining", web_app=WebAppInfo(url=miniapp_url))],
         [
             InlineKeyboardButton("💰 Balance", callback_data="balance"),
-            InlineKeyboardButton("👥 My Referral Code", callback_data="referral_code"),
+            InlineKeyboardButton("📨 Invite", callback_data="invite"),
         ],
+        [InlineKeyboardButton("🎁 Check Referral Rewards", callback_data="referral_reward")],
         [InlineKeyboardButton("🌐 Website", url=WEBSITE_URL)],
     ])
 
@@ -111,6 +112,55 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown",
         )
         return
+
+    # 딥링크로 초대된 경우 (?start=REFCODE) 자동 처리
+    if context.args:
+        ref_code = context.args[0]
+        referrer = db.find_user_by_referral_code(ref_code)
+
+        if referrer and referrer.get("_id") != user_id:
+            referrer_id = referrer["_id"]
+            _register_user(user, referred_by=referrer_id)
+
+            # 추천인 보상 지급
+            stats = db.get_global_stats()
+            total_mined_global = stats.get("total_mined", 0.0)
+            ref_reward = calculate_referral_reward(total_mined_global)
+
+            referrer_data = db.get_user(referrer_id)
+            if referrer_data:
+                new_balance = referrer_data.get("balance", 0.0) + ref_reward
+                new_ref_count = referrer_data.get("referral_count", 0) + 1
+                new_ref_earnings = referrer_data.get("referral_earnings", 0.0) + ref_reward
+                db.update_user(referrer_id, {
+                    "balance": new_balance,
+                    "referral_count": new_ref_count,
+                    "referral_earnings": new_ref_earnings,
+                })
+                try:
+                    await context.bot.send_message(
+                        chat_id=int(referrer_id),
+                        text=(
+                            f"🎉 *New Referral!*\n\n"
+                            f"Someone joined with your invite link!\n"
+                            f"You earned `{ref_reward:.6f}` RATE coins!"
+                        ),
+                        parse_mode="Markdown",
+                    )
+                except Exception:
+                    pass
+
+            await update.message.reply_text(
+                f"👋 Welcome to *RATE NETWORK*, {user.first_name}!\n\n"
+                f"✅ You joined with a referral link!\n"
+                f"🪙 Start mining RATE coins by watching short ads.",
+                parse_mode="Markdown",
+            )
+            await update.message.reply_text(
+                "Choose an option below:",
+                reply_markup=main_menu_keyboard(MINIAPP_URL),
+            )
+            return
 
     # 신규 유저 - 추천인 여부 확인
     context.user_data["registering"] = True
@@ -176,28 +226,49 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown",
         )
 
-    # ── 추천인 코드 확인 ──
-    elif data == "referral_code":
+    # ── 초대 링크 공유 ──
+    elif data == "invite":
         user_data = db.get_user(user_id)
         if not user_data:
             await query.answer("Please register first with /start", show_alert=True)
             return
 
         code = user_data.get("referral_code", "N/A")
-        referrals = user_data.get("referral_count", 0)
+        invite_link = f"https://t.me/ratenetworkbot?start={code}"
 
-        # 현재 예상 추천인 보상 계산
+        await query.message.reply_text(
+            f"📨 *Invite Friends & Earn RATE!*\n\n"
+            f"Share this message to invite friends:\n\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"🚀 Start mining Rate effortlessly on Telegram!\n\n"
+            f"💎 Mine RATE coins just by watching short ads.\n"
+            f"👥 Join now and start earning:\n"
+            f"{invite_link}\n"
+            f"━━━━━━━━━━━━━━━━━━",
+            parse_mode="Markdown",
+        )
+
+    # ── 레퍼럴 보상 확인 ──
+    elif data == "referral_reward":
+        user_data = db.get_user(user_id)
+        if not user_data:
+            await query.answer("Please register first with /start", show_alert=True)
+            return
+
+        referrals = user_data.get("referral_count", 0)
+        ref_earnings = user_data.get("referral_earnings", 0.0)
+
         stats = db.get_global_stats()
         total_mined_global = stats.get("total_mined", 0.0)
         est_reward = calculate_referral_reward(total_mined_global)
 
         await query.message.reply_text(
-            f"👥 *My Referral Code*\n\n"
-            f"🔑 Code: `{code}`\n"
-            f"👤 Referrals: `{referrals}` people\n\n"
-            f"💡 *Estimated reward per referral:*\n"
+            f"🎁 *My Referral Rewards*\n\n"
+            f"👤 Total referrals: `{referrals}` people\n"
+            f"💰 Total earned from referrals: `{ref_earnings:.6f}` RATE\n\n"
+            f"📊 *Estimated reward per new referral:*\n"
             f"└ `{est_reward:.6f}` RATE (= 5× current ad reward)\n\n"
-            f"Share your code and earn every time someone joins!",
+            f"Invite more friends to earn more! 📨",
             parse_mode="Markdown",
         )
 
@@ -239,9 +310,11 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if referrer_data:
             new_balance = referrer_data.get("balance", 0.0) + ref_reward
             new_ref_count = referrer_data.get("referral_count", 0) + 1
+            new_ref_earnings = referrer_data.get("referral_earnings", 0.0) + ref_reward
             db.update_user(referrer_id, {
                 "balance": new_balance,
                 "referral_count": new_ref_count,
+                "referral_earnings": new_ref_earnings,
             })
             # 추천인에게 알림
             try:
@@ -413,6 +486,7 @@ def _register_user(user, referred_by: str | None):
         "balance": 0.0,
         "total_mined_personal": 0.0,
         "referral_count": 0,
+        "referral_earnings": 0.0,
         "today_ad_count": 0,
         "last_reset_date": "",
         "join_date": get_today_utc(),
