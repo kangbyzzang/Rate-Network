@@ -274,8 +274,20 @@
       currentYmid = userId + "_" + Date.now();
 
       // Rewarded Popup: 'pop' 파라미터 사용
-      show_10784949('pop').then(() => {
-        onAdCompleted();
+      show_10784949('pop').then((result) => {
+        // valued = 실제 수익 발생, not_valued = 필터링됨
+        const eventType = result?.reward_event_type || result;
+        if (eventType === "valued" || eventType === true) {
+          onAdCompleted();
+        } else {
+          setStatus("⚠️ Ad not counted. Please try again later.", "error");
+          btn.disabled = false;
+          title.textContent = "Watch an Ad";
+          desc.innerHTML = "Watch a short video ad to earn RATE coins.<br/>Up to <strong>10 ads</strong> per day (UTC reset).";
+          icon.textContent = "⛏️";
+          adWatched = false;
+          setStep(1);
+        }
       }).catch(() => {
         setStatus("❌ Ad failed. Please try again.", "error");
         btn.disabled = false;
