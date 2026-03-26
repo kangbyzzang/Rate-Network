@@ -141,3 +141,33 @@ class FirebaseClient:
         new_total = stats.get("total_mined", 0.0) + amount
         self.update_document("global", "stats", {"total_mined": new_total})
         return new_total
+
+    # ── 광고 세션 검증 (Postback) ──────────────────────────
+
+    def store_verified_ymid(self, ymid: str) -> bool:
+        """Monetag postback 수신 시 ymid를 검증됨으로 저장 (10분 TTL)"""
+        import time
+        data = {
+            "verified": True,
+            "expires_at": int(time.time()) + 600,  # 10분 후 만료
+        }
+        return self.set_document("verified_ads", ymid, data)
+
+    def check_and_consume_ymid(self, ymid: str) -> bool:
+        """ymid가 검증됐는지 확인 후 소비(삭제). 유효하면 True 반환"""
+        import time
+        import requests as req
+        doc = self.get_document("verified_ads", ymid)
+        if not doc:
+            return False
+        if not doc.get("verified"):
+            return False
+        if doc.get("expires_at", 0) < int(time.time()):
+            # 만료된 ymid 삭제
+            url = f"{BASE_URL}/verified_ads/{ymid}?key={FIREBASE_API_KEY}"
+            req.delete(url)
+            return False
+        # 소비 처리 - 재사용 방지를 위해 즉시 삭제
+        url = f"{BASE_URL}/verified_ads/{ymid}?key={FIREBASE_API_KEY}"
+        req.delete(url)
+        return True

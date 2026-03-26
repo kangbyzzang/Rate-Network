@@ -18,3 +18,7 @@ MINIAPP_URL = "https://kangbyzzang.github.io/Rate-Network"
 
 # 채굴 설정
 MAX_DAILY_ADS = 10
+
+# Postback 보안 시크릿 (Railway 환경변수에도 동일하게 설정)
+import os
+POSTBACK_SECRET = os.environ.get("POSTBACK_SECRET", "ratenetwork_secret_2026")

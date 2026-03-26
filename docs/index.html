@@ -196,7 +196,12 @@
 
     let adWatched = false;
     let adReady   = false;
+    let currentYmid = "";
     const userId  = tg.initDataUnsafe?.user?.id?.toString() || "unknown";
+
+    function generateYmid() {
+      return Math.random().toString(36).substr(2, 12) + Date.now().toString(36);
+    }
 
     // ── 단계 표시 ──────────────────────────────────
     function setStep(n) {
@@ -265,12 +270,15 @@
         return;
       }
 
+      // 광고마다 고유한 ymid 생성
+      currentYmid = generateYmid();
+
       // 30초 타임아웃
       const adTimeout = new Promise((_, reject) =>
         setTimeout(() => reject(new Error("timeout")), 30000)
       );
 
-      Promise.race([show_10784949({ ymid: userId }), adTimeout]).then(() => {
+      Promise.race([show_10784949({ ymid: currentYmid }), adTimeout]).then(() => {
         onAdCompleted();
       }).catch((err) => {
         const msg = err?.message === "timeout"
@@ -302,6 +310,7 @@
       try {
         const payload = JSON.stringify({
           action: "ad_completed",
+          ymid: currentYmid,
           timestamp: Date.now(),
         });
         tg.sendData(payload);

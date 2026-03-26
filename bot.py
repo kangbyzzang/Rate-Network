@@ -5,7 +5,11 @@
 import logging
 import hashlib
 import json
+import os
+import threading
 from datetime import datetime, timezone
+
+from flask import Flask, request, jsonify
 
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
@@ -15,7 +19,7 @@ from telegram.ext import (
     CallbackQueryHandler, filters, ContextTypes
 )
 
-from config import TELEGRAM_TOKEN, ADMIN_IDS, WEBSITE_URL, MINIAPP_URL, MAX_DAILY_ADS
+from config import TELEGRAM_TOKEN, ADMIN_IDS, WEBSITE_URL, MINIAPP_URL, MAX_DAILY_ADS, POSTBACK_SECRET
 from firebase_client import FirebaseClient
 from mining import calculate_reward, calculate_referral_reward, get_mining_stats
 
@@ -26,6 +30,37 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 db = FirebaseClient()
+
+# ── Flask 서버 (Monetag Postback 수신) ───────────────────────
+
+flask_app = Flask(__name__)
+
+
+@flask_app.route("/health")
+def health():
+    return jsonify({"status": "ok"})
+
+
+@flask_app.route("/postback")
+def postback():
+    secret = request.args.get("secret", "")
+    ymid   = request.args.get("ymid", "")
+
+    if secret != POSTBACK_SECRET:
+        logger.warning(f"[POSTBACK] Invalid secret: {secret}")
+        return jsonify({"error": "unauthorized"}), 401
+
+    if not ymid:
+        return jsonify({"error": "missing ymid"}), 400
+
+    db.store_verified_ymid(ymid)
+    logger.info(f"[POSTBACK] ymid verified: {ymid}")
+    return jsonify({"ok": True})
+
+
+def run_flask():
+    port = int(os.environ.get("PORT", 8080))
+    flask_app.run(host="0.0.0.0", port=port, use_reloader=False)
 
 
 # ── 유틸리티 ────────────────────────────────────────────────
@@ -251,6 +286,15 @@ async def web_app_data_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     if action != "ad_completed":
         return
 
+    # ── Monetag Postback ymid 검증 ──
+    ymid = payload.get("ymid", "")
+    if not ymid or not db.check_and_consume_ymid(ymid):
+        logger.warning(f"[AD] Invalid or unverified ymid from {user_id}: {ymid}")
+        await update.message.reply_text(
+            "❌ Ad verification failed. Please watch the full ad and try again."
+        )
+        return
+
     user_data = db.get_user(user_id)
     if not user_data:
         await update.message.reply_text("❌ User not found. Please /start again.")
@@ -380,6 +424,11 @@ def _register_user(user, referred_by: str | None):
 # ── 메인 ─────────────────────────────────────────────────────
 
 def main():
+    # Flask 서버를 백그라운드 스레드로 실행
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    logger.info("Flask postback server started.")
+
     app = Application.builder().token(TELEGRAM_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -394,4 +443,6 @@ def main():
 
 
 if __name__ == "__main__":
+    import asyncio
+    asyncio.set_event_loop(asyncio.new_event_loop())
     main()
