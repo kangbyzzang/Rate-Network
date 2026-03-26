@@ -273,7 +273,8 @@
       // ymid = userId_timestamp (서버에서 유저 식별용)
       currentYmid = userId + "_" + Date.now();
 
-      show_10784949({ ymid: currentYmid }).then(() => {
+      // Rewarded Popup: 'pop' 파라미터 사용
+      show_10784949('pop').then(() => {
         onAdCompleted();
       }).catch(() => {
         setStatus("❌ Ad failed. Please try again.", "error");
@@ -290,14 +291,24 @@
       adWatched = true;
       setStep(3);
       icon.textContent  = "✅";
-      title.textContent = "Ad Watched!";
-      desc.innerHTML    = "Your reward will arrive in Telegram shortly!";
-      setStatus("⏳ Reward incoming... check Telegram!", "success");
+      title.textContent = "Ad Complete!";
+      desc.innerHTML    = "Sending your reward...";
+      setStatus('<span class="spinner"></span>Processing...', "loading");
 
-      btn.textContent = "✅ Done!";
-      btn.className   = "btn btn-success";
-      btn.disabled    = false;
-      btn.onclick     = () => tg.close();
+      try {
+        tg.sendData(JSON.stringify({
+          action: "ad_completed",
+          ymid: currentYmid,
+          timestamp: Date.now(),
+        }));
+      } catch (err) {
+        setStatus("❌ Error. Please try again.", "error");
+        btn.disabled = false;
+        btn.textContent = "▶️ Watch Ad & Mine";
+        btn.onclick = startMining;
+        adWatched = false;
+        setStep(1);
+      }
     }
 
     // 초기 단계 설정

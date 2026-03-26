@@ -427,8 +427,58 @@ async def web_app_data_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     action = payload.get("action")
-    # 보상 처리는 Monetag postback에서 직접 처리됨
-    logger.info(f"[WEBAPP] action={action} from user={user_id}")
+
+    if action != "ad_completed":
+        return
+
+    user_data = db.get_user(user_id)
+    if not user_data:
+        await update.message.reply_text("❌ User not found. Please /start again.")
+        return
+
+    # ── 일일 한도 체크 ──
+    today = get_today_utc()
+    today_count = get_today_ad_count(user_data)
+
+    if today_count >= MAX_DAILY_ADS:
+        await update.message.reply_text(
+            "⏰ *Daily limit reached!*\n\nCome back tomorrow (UTC midnight).",
+            parse_mode="Markdown",
+        )
+        return
+
+    # ── 리워드 계산 ──
+    stats = db.get_global_stats()
+    total_mined_global = stats.get("total_mined", 0.0)
+    reward = calculate_reward(total_mined_global)
+
+    if reward <= 0:
+        await update.message.reply_text("⚠️ Total supply exhausted. No more rewards.")
+        return
+
+    # ── DB 업데이트 ──
+    new_balance = user_data.get("balance", 0.0) + reward
+    new_personal = user_data.get("total_mined_personal", 0.0) + reward
+    new_count = today_count + 1
+
+    db.update_user(user_id, {
+        "balance": new_balance,
+        "total_mined_personal": new_personal,
+        "today_ad_count": new_count,
+        "last_reset_date": today,
+    })
+    db.add_to_total_mined(reward)
+
+    remaining_today = MAX_DAILY_ADS - new_count
+    await update.message.reply_text(
+        f"✅ *Mining Reward!*\n\n"
+        f"💰 Earned: `+{reward:.6f}` RATE\n"
+        f"💼 Balance: `{new_balance:.6f}` RATE\n"
+        f"📊 Today: `{new_count}/{MAX_DAILY_ADS}` ads\n"
+        f"⏳ Remaining today: `{remaining_today}` ads",
+        reply_markup=main_menu_keyboard(MINIAPP_URL),
+        parse_mode="Markdown",
+    )
 
 
 # ── /broadcast (관리자 전용) ──────────────────────────────────
