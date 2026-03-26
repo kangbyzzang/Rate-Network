@@ -145,6 +145,48 @@
 
     .step.active { background: #f0c040; }
     .step.done   { background: #3fb950; }
+
+    /* 주의사항 박스 */
+    .notice {
+      width: 100%;
+      max-width: 340px;
+      margin-top: 16px;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 16px 18px;
+    }
+
+    .notice-title {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: #f0c040;
+      letter-spacing: 0.5px;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+    }
+
+    .notice ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .notice ul li {
+      font-size: 0.78rem;
+      color: #8b949e;
+      line-height: 1.6;
+      padding-left: 16px;
+      position: relative;
+      margin-bottom: 4px;
+    }
+
+    .notice ul li::before {
+      content: "•";
+      position: absolute;
+      left: 0;
+      color: #f0c040;
+    }
   </style>
 </head>
 <body>
@@ -173,6 +215,16 @@
     </button>
 
     <div id="status"></div>
+  </div>
+
+  <div class="notice">
+    <div class="notice-title">⚠️ Important Notice</div>
+    <ul>
+      <li>Ads are served by a third-party network and are not affiliated with RATE NETWORK. We are not responsible for any ad content.</li>
+      <li>Watch the ad for at least <strong style="color:#e6edf3;">10 seconds</strong> before going back — leaving too early may result in no reward.</li>
+      <li>Only <strong style="color:#e6edf3;">valued</strong> ad views are rewarded. Low-quality or filtered views will not count.</li>
+      <li>Up to <strong style="color:#e6edf3;">10 ads</strong> per day. Resets at UTC midnight.</li>
+    </ul>
   </div>
 
   <!-- Monetag Rewarded Interstitial 스크립트 -->
