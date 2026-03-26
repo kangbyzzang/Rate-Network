@@ -220,12 +220,28 @@
       icon.textContent = "📺";
       setStatus('<span class="spinner"></span>Ad playing... please wait', "loading");
 
-      // Monetag Rewarded Interstitial 호출
-      show_10784949().then(() => {
+      // Monetag Rewarded Interstitial 호출 (15초 타임아웃)
+      const adTimeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("timeout")), 15000)
+      );
+
+      if (typeof show_10784949 === "undefined") {
+        setStatus("❌ Ad script not loaded. Please try again.", "error");
+        btn.disabled = false;
+        title.textContent = "Watch an Ad";
+        desc.innerHTML = "Watch a short video ad to earn RATE coins.<br/>Up to <strong>10 ads</strong> per day (UTC reset).";
+        icon.textContent = "⛏️";
+        setStep(1);
+        return;
+      }
+
+      Promise.race([show_10784949(), adTimeout]).then(() => {
         onAdCompleted();
-      }).catch(() => {
-        // 광고 로드 실패 시
-        setStatus("❌ Ad failed to load. Please try again.", "error");
+      }).catch((err) => {
+        const msg = err?.message === "timeout"
+          ? "⏱️ Ad timed out. Please try again."
+          : "❌ Ad failed to load. Please try again.";
+        setStatus(msg, "error");
         btn.disabled = false;
         title.textContent = "Watch an Ad";
         desc.innerHTML = "Watch a short video ad to earn RATE coins.<br/>Up to <strong>10 ads</strong> per day (UTC reset).";
