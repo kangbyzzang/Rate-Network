@@ -228,7 +228,20 @@
     btn.disabled = true;
     setStatus('<span class="spinner"></span>Loading ad...', "loading");
     window.addEventListener("load", () => {
-      setTimeout(preloadAd, 500);
+      // 최대 5초 기다린 후 SDK 존재 여부 확인
+      let waited = 0;
+      const checkSDK = setInterval(() => {
+        waited += 500;
+        if (typeof show_10784949 !== "undefined") {
+          clearInterval(checkSDK);
+          preloadAd();
+        } else if (waited >= 5000) {
+          clearInterval(checkSDK);
+          // SDK 로드 실패 - 버튼은 활성화하되 광고 없이 진행 불가 알림
+          btn.disabled = false;
+          setStatus("⚠️ Ad SDK failed to load.", "error");
+        }
+      }, 500);
     });
 
     // ── 광고 시청 시작 ──────────────────────────────
