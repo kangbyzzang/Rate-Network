@@ -13,7 +13,8 @@ from datetime import datetime, timezone
 from flask import Flask, request, jsonify
 
 from telegram import (
-    Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+    Update, InlineKeyboardButton, InlineKeyboardMarkup,
+    ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
 )
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
@@ -234,6 +235,19 @@ def main_menu_keyboard(miniapp_url: str) -> InlineKeyboardMarkup:
     ])
 
 
+def persistent_keyboard() -> ReplyKeyboardMarkup:
+    """항상 하단에 고정되는 메인 키보드"""
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton("⛏️ Mining", web_app=WebAppInfo(url=MINIAPP_URL))],
+            [KeyboardButton("💰 Balance"), KeyboardButton("📨 Invite")],
+            [KeyboardButton("🎁 Referrals"), KeyboardButton("🌐 Website")],
+        ],
+        resize_keyboard=True,
+        is_persistent=True,
+    )
+
+
 # ── /start ──────────────────────────────────────────────────
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -245,8 +259,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     existing = db.get_user(user_id)
     if existing:
         await update.message.reply_text(
-            f"👋 Welcome back, *{user.first_name}*!\n\nChoose an option below:",
-            reply_markup=main_menu_keyboard(MINIAPP_URL),
+            f"👋 Welcome back, *{user.first_name}*!\n\n"
+            f"Use the buttons below to mine, check your balance, or invite friends! ⛏️",
+            reply_markup=persistent_keyboard(),
             parse_mode="Markdown",
         )
         return
@@ -291,12 +306,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(
                 f"👋 Welcome to *RATE NETWORK*, {user.first_name}!\n\n"
                 f"✅ You joined with a referral link!\n"
-                f"🪙 Start mining RATE coins by watching short ads.",
+                f"🪙 Start mining RATE coins by watching short ads.\n\n"
+                f"Use the buttons below to get started! ⬇️",
+                reply_markup=persistent_keyboard(),
                 parse_mode="Markdown",
-            )
-            await update.message.reply_text(
-                "Choose an option below:",
-                reply_markup=main_menu_keyboard(MINIAPP_URL),
             )
             return
 
@@ -315,6 +328,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Did someone invite you?",
         reply_markup=keyboard,
         parse_mode="Markdown",
+    )
+    # 키보드를 미리 내려보냄 (가입 완료 전에도 보이도록)
+    await update.message.reply_text(
+        "⬇️ Your menu is ready!",
+        reply_markup=persistent_keyboard(),
     )
 
 
@@ -341,8 +359,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown",
         )
         await query.message.reply_text(
-            "Choose an option below:",
-            reply_markup=main_menu_keyboard(MINIAPP_URL),
+            "🎉 Use the buttons below to start mining! ⬇️",
+            reply_markup=persistent_keyboard(),
         )
 
     # ── 잔액 확인 ──
@@ -418,6 +436,74 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(user.id)
     text = update.message.text.strip()
 
+    # ── 하단 키보드 버튼 처리 ──────────────────────────────────
+    if text == "💰 Balance":
+        user_data = db.get_user(user_id)
+        if not user_data:
+            await update.message.reply_text("Please register first with /start")
+            return
+        balance = user_data.get("balance", 0.0)
+        total_mined = user_data.get("total_mined_personal", 0.0)
+        today_count = get_today_ad_count(user_data)
+        await update.message.reply_text(
+            f"💰 *Your Balance*\n\n"
+            f"┌ Balance: `{balance:.6f}` RATE\n"
+            f"├ Total mined: `{total_mined:.6f}` RATE\n"
+            f"└ Today's ads: `{today_count}/{MAX_DAILY_ADS}`",
+            parse_mode="Markdown",
+        )
+        return
+
+    if text == "📨 Invite":
+        user_data = db.get_user(user_id)
+        if not user_data:
+            await update.message.reply_text("Please register first with /start")
+            return
+        code = user_data.get("referral_code", "N/A")
+        invite_link = f"https://t.me/ratenetworkbot?start={code}"
+        await update.message.reply_text(
+            f"📨 *Invite Friends & Earn RATE!*\n\n"
+            f"Share this message to invite friends:\n\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"🚀 Start mining Rate effortlessly on Telegram!\n\n"
+            f"💎 Mine RATE coins just by watching short ads.\n"
+            f"👥 Join now and start earning:\n"
+            f"{invite_link}\n"
+            f"━━━━━━━━━━━━━━━━━━",
+            parse_mode="Markdown",
+        )
+        return
+
+    if text == "🎁 Referrals":
+        user_data = db.get_user(user_id)
+        if not user_data:
+            await update.message.reply_text("Please register first with /start")
+            return
+        referrals = user_data.get("referral_count", 0)
+        ref_earnings = user_data.get("referral_earnings", 0.0)
+        stats = db.get_global_stats()
+        total_mined_global = stats.get("total_mined", 0.0)
+        est_reward = calculate_referral_reward(total_mined_global)
+        await update.message.reply_text(
+            f"🎁 *My Referral Rewards*\n\n"
+            f"👤 Total referrals: `{referrals}` people\n"
+            f"💰 Total earned from referrals: `{ref_earnings:.6f}` RATE\n\n"
+            f"📊 *Estimated reward per new referral:*\n"
+            f"└ `{est_reward:.6f}` RATE (= 5× current ad reward)\n\n"
+            f"Invite more friends to earn more! 📨",
+            parse_mode="Markdown",
+        )
+        return
+
+    if text == "🌐 Website":
+        await update.message.reply_text(
+            "🌐 Visit the official RATE NETWORK website:",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🌐 Visit RATE NETWORK", url=WEBSITE_URL)]
+            ]),
+        )
+        return
+
     # 추천인 코드 입력 대기 중
     if context.user_data.get("awaiting_referral"):
         context.user_data["awaiting_referral"] = False
@@ -470,12 +556,10 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await update.message.reply_text(
             f"✅ *Registration complete!*\n\n"
-            f"Referral code accepted! Welcome to RATE NETWORK!",
+            f"Referral code accepted! Welcome to RATE NETWORK!\n\n"
+            f"Use the buttons below to start mining! ⬇️",
+            reply_markup=persistent_keyboard(),
             parse_mode="Markdown",
-        )
-        await update.message.reply_text(
-            "Choose an option below:",
-            reply_markup=main_menu_keyboard(MINIAPP_URL),
         )
         return
 
