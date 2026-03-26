@@ -6,10 +6,10 @@
 import math
 
 R_INITIAL = 5.0             # 서비스 초기 광고 1회당 리워드 (코인)
-TOTAL_SUPPLY = 30_000_000_000  # 전체 채굴 물량 (30억개)
+TOTAL_SUPPLY = 30_000_000_000  # 전체 채굴 물량 (300억개)
 
 # k 계산: 전체 물량 소진 시 리워드 = 1코인
-# 5 × e^(-k × 30B) = 1  →  k = ln(5) / 30B
+# 5 × e^(-k × 300억) = 1  →  k = ln(5) / 300억
 K = math.log(R_INITIAL) / TOTAL_SUPPLY  # ≈ 1.535e-10
 
 
