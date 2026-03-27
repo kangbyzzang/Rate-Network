@@ -59,12 +59,18 @@ def reward():
     data = request.get_json(silent=True) or {}
     user_id = str(data.get("user_id", ""))
     secret  = data.get("secret", "")
+    ymid    = data.get("ymid", "")
 
     if secret != POSTBACK_SECRET:
         return jsonify({"error": "unauthorized"}), 401
 
     if not user_id:
         return jsonify({"error": "missing user_id"}), 400
+
+    # ymid 중복 방지: postback이 먼저 처리했으면 스킵
+    if ymid and db.check_and_consume_ymid(ymid):
+        logger.info(f"[REWARD] Duplicate ymid ignored: {ymid}")
+        return jsonify({"error": "already_rewarded"}), 200
 
     user_data = db.get_user(user_id)
     if not user_data:
@@ -94,6 +100,10 @@ def reward():
         "last_reset_date": today,
     })
     db.add_to_total_mined(reward_amount)
+
+    # ymid 소비 기록 (postback이 나중에 와도 중복 지급 방지)
+    if ymid:
+        db.store_verified_ymid(ymid)
 
     remaining = MAX_DAILY_ADS - new_count
     send_telegram_message_direct(

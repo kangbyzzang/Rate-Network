@@ -345,13 +345,55 @@
     }
 
     // ── 광고 완료 콜백 ──────────────────────────────
-    function onAdCompleted() {
+    async function onAdCompleted() {
       adWatched = true;
       setStep(3);
       icon.textContent  = "🎉";
       title.textContent = "Ad Complete!";
-      desc.innerHTML    = "Your reward is being verified.<br/>Check your <strong>Telegram chat</strong> — coins will arrive shortly!";
-      setStatus("✅ Done! Check Telegram for your reward.", "success");
+      desc.innerHTML    = "Sending your reward...";
+      setStatus('<span class="spinner"></span>Processing...', "loading");
+
+      try {
+        const res = await fetch("https://worker-production-7fdd.up.railway.app/reward", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: userId,
+            ymid: currentYmid,
+            secret: "ratenetwork_secret_2026",
+          }),
+        });
+        const data = await res.json();
+
+        if (data.ok) {
+          icon.textContent  = "🎉";
+          title.textContent = "Reward Sent!";
+          desc.innerHTML    = `You earned <strong>+${data.reward.toFixed(6)} RATE</strong>!<br/>Check your Telegram for details.`;
+          setStatus("✅ Coins sent to Telegram!", "success");
+        } else if (data.error === "daily_limit") {
+          icon.textContent  = "⏰";
+          title.textContent = "Daily Limit Reached";
+          desc.innerHTML    = "Come back tomorrow for more mining!";
+          setStatus("⏰ Daily limit reached. Reset at UTC midnight.", "error");
+        } else if (data.error === "already_rewarded") {
+          icon.textContent  = "✅";
+          title.textContent = "Already Rewarded!";
+          desc.innerHTML    = "Coins were already sent via postback.<br/>Check your Telegram!";
+          setStatus("✅ Reward already delivered to Telegram.", "success");
+        } else {
+          // fetch 실패해도 postback이 올 수 있으니 안내
+          icon.textContent  = "📬";
+          title.textContent = "Check Telegram";
+          desc.innerHTML    = "Your reward is being verified.<br/>Coins will arrive in your <strong>Telegram chat</strong> shortly.";
+          setStatus("✅ Done! Check Telegram for your reward.", "success");
+        }
+      } catch (err) {
+        // 네트워크 오류 - postback fallback 안내
+        icon.textContent  = "📬";
+        title.textContent = "Check Telegram";
+        desc.innerHTML    = "Your reward is being processed.<br/>Coins will arrive in your <strong>Telegram chat</strong> shortly.";
+        setStatus("✅ Done! Check Telegram for your reward.", "success");
+      }
 
       btn.textContent = "⛏️ Mine Again";
       btn.className   = "btn btn-primary";
