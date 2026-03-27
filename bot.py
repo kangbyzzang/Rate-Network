@@ -57,15 +57,19 @@ def reward():
         return jsonify({"ok": True})
 
     data = request.get_json(silent=True) or {}
-    user_id = str(data.get("user_id", ""))
+    user_id = str(data.get("user_id", "")).strip()
     secret  = data.get("secret", "")
     ymid    = data.get("ymid", "")
 
+    logger.info(f"[REWARD] Received: user_id={user_id!r} ymid={ymid!r}")
+
     if secret != POSTBACK_SECRET:
+        logger.warning(f"[REWARD] Invalid secret from user={user_id}")
         return jsonify({"error": "unauthorized"}), 401
 
-    if not user_id:
-        return jsonify({"error": "missing user_id"}), 400
+    if not user_id or user_id == "unknown":
+        logger.warning(f"[REWARD] Missing or unknown user_id: {user_id!r}")
+        return jsonify({"error": "missing_user_id", "message": "Could not identify user. Please restart the mini app from Telegram."}), 400
 
     # ymid 중복 방지: postback이 먼저 처리했으면 스킵
     if ymid and db.check_and_consume_ymid(ymid):
@@ -74,7 +78,17 @@ def reward():
 
     user_data = db.get_user(user_id)
     if not user_data:
-        return jsonify({"error": "user not found"}), 404
+        logger.warning(f"[REWARD] User not found in Firebase: {user_id!r}. Auto-registering...")
+        # 봇을 먼저 시작하지 않은 유저 자동 등록 시도
+        db.create_user(user_id, {
+            "balance": 0.0, "total_mined_personal": 0.0,
+            "today_ad_count": 0, "last_reset_date": "",
+            "referral_code": user_id[:8], "referral_earnings": 0.0,
+            "referred_by": None
+        })
+        user_data = db.get_user(user_id)
+    if not user_data:
+        return jsonify({"error": "user_not_found", "message": "User not found. Please start the bot first with /start"}), 404
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     today_count = get_today_ad_count(user_data)
@@ -135,19 +149,25 @@ def send_telegram_message_direct(user_id: str, text: str):
 
 @flask_app.route("/postback")
 def postback():
-    secret = request.args.get("secret", "")
-    ymid   = request.args.get("ymid", "")
+    secret  = request.args.get("secret", "")
+    ymid    = request.args.get("ymid", "")
+    # {telegram_id} 매크로로 직접 받은 user_id (postback URL에 포함)
+    tg_id   = request.args.get("user_id", "").strip()
+
+    logger.info(f"[POSTBACK] Received: tg_id={tg_id!r} ymid={ymid!r} secret={'ok' if secret == POSTBACK_SECRET else 'bad'}")
 
     if secret != POSTBACK_SECRET:
         logger.warning(f"[POSTBACK] Invalid secret: {secret}")
         return jsonify({"error": "unauthorized"}), 401
 
-    if not ymid or "_" not in ymid:
-        logger.warning(f"[POSTBACK] Invalid ymid format: {ymid}")
-        return jsonify({"error": "invalid ymid"}), 400
-
-    # ymid 형식: {user_id}_{timestamp}
-    user_id = ymid.split("_")[0]
+    # user_id 결정: URL 파라미터 우선, 없으면 ymid에서 파싱
+    if tg_id:
+        user_id = tg_id
+    elif ymid and "_" in ymid:
+        user_id = ymid.split("_")[0]
+    else:
+        logger.warning(f"[POSTBACK] Cannot determine user_id: tg_id={tg_id!r} ymid={ymid!r}")
+        return jsonify({"error": "cannot_identify_user"}), 400
 
     # 중복 보상 방지
     if db.check_and_consume_ymid(ymid):

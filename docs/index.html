@@ -287,25 +287,31 @@
         .catch(() => { adReady = false; });
     }
 
-    // SDK 로드 완료 후 프리로드 시작
+    // userId 검증: Telegram에서 열지 않으면 비활성화
     btn.disabled = true;
-    setStatus('<span class="spinner"></span>Loading ad...', "loading");
-    window.addEventListener("load", () => {
-      // 최대 5초 기다린 후 SDK 존재 여부 확인
-      let waited = 0;
-      const checkSDK = setInterval(() => {
-        waited += 500;
-        if (typeof show_10784949 !== "undefined") {
-          clearInterval(checkSDK);
-          preloadAd();
-        } else if (waited >= 5000) {
-          clearInterval(checkSDK);
-          // SDK 로드 실패 - 버튼은 활성화하되 광고 없이 진행 불가 알림
-          btn.disabled = false;
-          setStatus("⚠️ Ad SDK failed to load.", "error");
-        }
-      }, 500);
-    });
+    if (!userId || userId === "unknown") {
+      icon.textContent  = "⚠️";
+      title.textContent = "Open in Telegram";
+      desc.innerHTML    = "Please open this mini app from the Telegram bot to mine RATE coins.";
+      setStatus("⚠️ User not identified. Open from Telegram.", "error");
+    } else {
+      // SDK 로드 완료 후 프리로드 시작
+      setStatus('<span class="spinner"></span>Loading ad...', "loading");
+      window.addEventListener("load", () => {
+        let waited = 0;
+        const checkSDK = setInterval(() => {
+          waited += 500;
+          if (typeof show_10784949 !== "undefined") {
+            clearInterval(checkSDK);
+            preloadAd();
+          } else if (waited >= 5000) {
+            clearInterval(checkSDK);
+            btn.disabled = false;
+            setStatus("⚠️ Ad SDK failed to load.", "error");
+          }
+        }, 500);
+      });
+    }
 
     // ── 광고 시청 시작 ──────────────────────────────
     function startMining() {
@@ -380,8 +386,12 @@
           title.textContent = "Already Rewarded!";
           desc.innerHTML    = "Coins were already sent via postback.<br/>Check your Telegram!";
           setStatus("✅ Reward already delivered to Telegram.", "success");
+        } else if (data.error === "missing_user_id") {
+          icon.textContent  = "⚠️";
+          title.textContent = "Cannot Identify User";
+          desc.innerHTML    = "Please close this and reopen the mini app from Telegram.";
+          setStatus("⚠️ " + (data.message || "User not identified."), "error");
         } else {
-          // fetch 실패해도 postback이 올 수 있으니 안내
           icon.textContent  = "📬";
           title.textContent = "Check Telegram";
           desc.innerHTML    = "Your reward is being verified.<br/>Coins will arrive in your <strong>Telegram chat</strong> shortly.";
