@@ -204,7 +204,8 @@
     <div class="mining-icon" id="mining-icon">⛏️</div>
     <h2 id="card-title">Watch an Ad</h2>
     <p id="card-desc">
-      Watch a short video ad to earn RATE coins.<br/>
+      Watch a short ad to earn RATE coins.<br/>
+      Reward is sent directly to your <strong>Telegram chat</strong>.<br/>
       Up to <strong>10 ads</strong> per day (UTC reset).
     </p>
 
@@ -220,12 +221,16 @@
   <div class="notice">
     <div class="notice-title">⚠️ Important Notice</div>
     <ul>
-      <li>Ads are served by a <strong style="color:#e6edf3;">third-party ad network</strong> and are completely unrelated to RATE NETWORK. We have no control over ad content — please be cautious.</li>
-      <li>Watch the ad for <strong style="color:#e6edf3;">at least 10 seconds</strong> before pressing back. Closing too early will result in no reward.</li>
-      <li>Do <strong style="color:#e6edf3;">not click on suspicious links</strong> inside ads. RATE NETWORK is not responsible for any third-party content or websites shown in ads.</li>
-      <li>Only <strong style="color:#e6edf3;">fully verified</strong> ad views earn rewards. Incomplete or filtered views will not be counted.</li>
+      <li>Ads show <strong style="color:#e6edf3;">Telegram channels</strong> unrelated to RATE NETWORK. We do not endorse or control any advertised channels.</li>
+      <li><strong style="color:#f85149;">Beware of scams.</strong> Never send money or share personal info with channels shown in ads. RATE NETWORK will never ask for payments.</li>
+      <li>Stay in the channel for <strong style="color:#e6edf3;">at least 10 seconds</strong> before going back. Leaving too early may result in no reward.</li>
+      <li>Your coins are sent <strong style="color:#e6edf3;">directly to your Telegram chat</strong> once the ad is verified.</li>
       <li>Up to <strong style="color:#e6edf3;">10 ads</strong> per day. Counter resets at UTC midnight.</li>
     </ul>
+    <div style="margin-top:12px; padding-top:12px; border-top:1px solid #30363d; font-size:0.78rem; color:#8b949e; line-height:1.6;">
+      💡 <strong style="color:#f0c040;">Didn't receive coins?</strong><br/>
+      Join the Telegram channel shown in the ad, stay for a few seconds, then come back and try again.
+    </div>
   </div>
 
   <!-- Monetag Rewarded Interstitial 스크립트 -->
@@ -323,81 +328,36 @@
         return;
       }
 
-      // ymid = userId_timestamp (서버에서 유저 식별용)
+      // ymid = userId_timestamp (postback에서 유저 식별용)
       currentYmid = userId + "_" + Date.now();
 
-      // Rewarded Popup: 'pop' 파라미터 사용
-      show_10784949('pop').then((result) => {
-        // valued = 실제 수익 발생, not_valued = 필터링됨
-        const eventType = result?.reward_event_type || result;
-        if (eventType === "valued" || eventType === true) {
-          onAdCompleted();
-        } else {
-          setStatus("⚠️ Ad not counted. Please try again later.", "error");
-          btn.disabled = false;
-          title.textContent = "Watch an Ad";
-          desc.innerHTML = "Watch a short video ad to earn RATE coins.<br/>Up to <strong>10 ads</strong> per day (UTC reset).";
-          icon.textContent = "⛏️";
-          adWatched = false;
-          setStep(1);
-        }
+      // Rewarded Interstitial: Telegram 채널 광고
+      show_10784949({ ymid: currentYmid }).then(() => {
+        onAdCompleted();
       }).catch(() => {
         setStatus("❌ Ad failed. Please try again.", "error");
         btn.disabled = false;
         title.textContent = "Watch an Ad";
-        desc.innerHTML = "Watch a short video ad to earn RATE coins.<br/>Up to <strong>10 ads</strong> per day (UTC reset).";
+        desc.innerHTML = "Watch a short ad to earn RATE coins.<br/>Up to <strong>10 ads</strong> per day (UTC reset).";
         icon.textContent = "⛏️";
         setStep(1);
       });
     }
 
     // ── 광고 완료 콜백 ──────────────────────────────
-    async function onAdCompleted() {
+    function onAdCompleted() {
       adWatched = true;
       setStep(3);
-      icon.textContent  = "✅";
+      icon.textContent  = "🎉";
       title.textContent = "Ad Complete!";
-      desc.innerHTML    = "Sending your reward...";
-      setStatus('<span class="spinner"></span>Processing...', "loading");
+      desc.innerHTML    = "Your reward is being verified.<br/>Check your <strong>Telegram chat</strong> — coins will arrive shortly!";
+      setStatus("✅ Done! Check Telegram for your reward.", "success");
 
-      try {
-        const res = await fetch("https://worker-production-7fdd.up.railway.app/reward", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            user_id: userId,
-            secret: "ratenetwork_secret_2026",
-          }),
-        });
-        const data = await res.json();
-
-        if (data.ok) {
-          icon.textContent  = "🎉";
-          title.textContent = "Reward Sent!";
-          desc.innerHTML    = `You earned <strong>+${data.reward.toFixed(6)} RATE</strong>!<br/>Check your Telegram for details.`;
-          setStatus("✅ Success! Check Telegram.", "success");
-          btn.textContent = "✅ Done!";
-          btn.className   = "btn btn-success";
-          btn.disabled    = false;
-          btn.onclick     = () => tg.close();
-        } else if (data.error === "daily_limit") {
-          setStatus("⏰ Daily limit reached! Come back tomorrow.", "error");
-          btn.disabled = false;
-          btn.textContent = "▶️ Watch Ad & Mine";
-          btn.onclick = startMining;
-          adWatched = false;
-          setStep(1);
-        } else {
-          throw new Error(data.error || "unknown");
-        }
-      } catch (err) {
-        setStatus("❌ Error sending reward. Please try again.", "error");
-        btn.disabled = false;
-        btn.textContent = "▶️ Watch Ad & Mine";
-        btn.onclick = startMining;
-        adWatched = false;
-        setStep(1);
-      }
+      btn.textContent = "⛏️ Mine Again";
+      btn.className   = "btn btn-primary";
+      btn.disabled    = false;
+      adWatched       = false;
+      btn.onclick     = startMining;
     }
 
     // 초기 단계 설정
