@@ -334,17 +334,30 @@
         return;
       }
 
-      // ymid = userId_timestamp (postback에서 유저 식별용)
+      // ymid = userId_timestamp (중복방지 식별용)
       currentYmid = userId + "_" + Date.now();
 
-      // Rewarded Interstitial: Telegram 채널 광고
-      show_10784949({ ymid: currentYmid }).then(() => {
-        onAdCompleted();
+      // Rewarded Popup: 미니앱이 포그라운드 유지 → fetch() 안정적으로 완료됨
+      show_10784949('pop').then((result) => {
+        // valued = 실제 수익 광고, not_valued = 필터됨
+        const eventType = result?.reward_event_type || result;
+        if (eventType === "valued" || eventType === true || !eventType) {
+          onAdCompleted();
+        } else {
+          // not_valued: 코인은 안 주되 재시도 허용
+          setStatus("⚠️ Ad not counted (filtered). Please try again.", "error");
+          btn.disabled = false;
+          title.textContent = "Watch an Ad";
+          desc.innerHTML = "Watch a short ad to earn RATE coins.<br/>Reward is sent directly to your <strong>Telegram chat</strong>.<br/>Up to <strong>10 ads</strong> per day (UTC reset).";
+          icon.textContent = "⛏️";
+          adWatched = false;
+          setStep(1);
+        }
       }).catch(() => {
         setStatus("❌ Ad failed. Please try again.", "error");
         btn.disabled = false;
         title.textContent = "Watch an Ad";
-        desc.innerHTML = "Watch a short ad to earn RATE coins.<br/>Up to <strong>10 ads</strong> per day (UTC reset).";
+        desc.innerHTML = "Watch a short ad to earn RATE coins.<br/>Reward is sent directly to your <strong>Telegram chat</strong>.<br/>Up to <strong>10 ads</strong> per day (UTC reset).";
         icon.textContent = "⛏️";
         setStep(1);
       });
