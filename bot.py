@@ -800,31 +800,55 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not context.args:
         await update.message.reply_text(
-            "Usage: /broadcast <message>\n"
-            "Example: /broadcast Hello everyone!"
+            "📢 *Broadcast Usage*\n\n"
+            "`/broadcast <message>`\n\n"
+            "Example:\n`/broadcast Hello everyone!`",
+            parse_mode="Markdown"
         )
         return
 
     msg = " ".join(context.args)
     users = db.get_all_users()
+    total = len(users)
+
+    # 미리보기 먼저 전송
+    preview_text = (
+        f"📋 *Broadcast Preview*\n"
+        f"총 {total}명에게 아래 메시지를 발송합니다:\n\n"
+        f"─────────────────────\n"
+        f"📢 *RATE NETWORK Announcement*\n\n{msg}\n"
+        f"─────────────────────"
+    )
+    await update.message.reply_text(preview_text, parse_mode="Markdown")
 
     sent = 0
     failed = 0
+    failed_ids = []
     for u in users:
+        uid = u["_id"]
         try:
             await context.bot.send_message(
-                chat_id=int(u["_id"]),
+                chat_id=int(uid),
                 text=f"📢 *RATE NETWORK Announcement*\n\n{msg}",
                 parse_mode="Markdown",
             )
             sent += 1
         except Exception as e:
-            logger.warning(f"Failed to send to {u['_id']}: {e}")
+            logger.warning(f"[BROADCAST] Failed to send to {uid}: {e}")
             failed += 1
+            failed_ids.append(uid)
 
-    await update.message.reply_text(
-        f"📢 Broadcast complete!\n✅ Sent: {sent}\n❌ Failed: {failed}"
+    # 결과 요약 전송
+    summary = (
+        f"✅ *Broadcast Complete!*\n\n"
+        f"📤 Sent: {sent}/{total}\n"
+        f"❌ Failed: {failed}"
     )
+    if failed_ids:
+        summary += f"\nFailed IDs: {', '.join(failed_ids)}"
+
+    logger.info(f"[BROADCAST] admin={user.id} sent={sent} failed={failed} msg={msg!r}")
+    await update.message.reply_text(summary, parse_mode="Markdown")
 
 
 # ── /website ─────────────────────────────────────────────────
