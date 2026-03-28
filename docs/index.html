@@ -372,6 +372,22 @@
       desc.innerHTML    = "Sending your reward...";
       setStatus('<span class="spinner"></span>Processing...', "loading");
 
+      // 1단계: 시청 기록 먼저 저장 (서버 오류 시 자동 복구 근거)
+      try {
+        await fetch("https://worker-production-7fdd.up.railway.app/log_watch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: userId,
+            ymid: currentYmid,
+            secret: "ratenetwork_secret_2026",
+          }),
+        });
+      } catch (e) {
+        // log_watch 실패해도 reward는 계속 시도
+      }
+
+      // 2단계: 보상 지급
       try {
         const res = await fetch("https://worker-production-7fdd.up.railway.app/reward", {
           method: "POST",

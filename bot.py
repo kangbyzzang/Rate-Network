@@ -51,6 +51,29 @@ def health():
     return jsonify({"status": "ok"})
 
 
+@flask_app.route("/log_watch", methods=["POST", "OPTIONS"])
+def log_watch():
+    """광고 시청 직후 pending 기록 — /reward 실패 시 자동 복구 근거"""
+    if request.method == "OPTIONS":
+        return jsonify({"ok": True})
+
+    data = request.get_json(silent=True) or {}
+    user_id = str(data.get("user_id", "")).strip()
+    ymid    = data.get("ymid", "")
+    secret  = data.get("secret", "")
+
+    if secret != POSTBACK_SECRET:
+        return jsonify({"error": "unauthorized"}), 401
+
+    if not user_id or user_id == "unknown" or not ymid:
+        return jsonify({"error": "missing_params"}), 400
+
+    timestamp = datetime.now(timezone.utc).isoformat()
+    db.create_watch_log(ymid, user_id, timestamp)
+    logger.info(f"[LOG_WATCH] Pending logged: user_id={user_id} ymid={ymid}")
+    return jsonify({"ok": True})
+
+
 @flask_app.route("/reward", methods=["POST", "OPTIONS"])
 def reward():
     if request.method == "OPTIONS":
@@ -116,8 +139,10 @@ def reward():
     db.add_to_total_mined(reward_amount)
 
     # ymid 소비 기록 (postback이 나중에 와도 중복 지급 방지)
+    now_iso = datetime.now(timezone.utc).isoformat()
     if ymid:
         db.store_verified_ymid(ymid)
+        db.complete_watch_log(ymid, now_iso)  # 미지급 복구 큐에서 제거
 
     remaining = MAX_DAILY_ADS - new_count
     send_telegram_message_direct(
@@ -225,6 +250,108 @@ def postback():
 
     logger.info(f"[POSTBACK] Reward granted: user={user_id} reward={reward}")
     return jsonify({"ok": True})
+
+
+def retry_pending_rewards():
+    """미지급 보상 자동 재시도 — 10분마다 실행되는 백그라운드 스레드"""
+    import time as _time
+    MAX_RETRIES   = 5
+    MIN_AGE_SECS  = 300   # 5분 이상 지난 것만 재시도
+    INTERVAL_SECS = 600   # 10분마다 실행
+
+    logger.info("[RETRY] Pending reward retry scheduler started.")
+
+    while True:
+        _time.sleep(INTERVAL_SECS)
+        try:
+            pending = db.get_pending_watch_logs()
+            if not pending:
+                continue
+
+            now = datetime.now(timezone.utc)
+            logger.info(f"[RETRY] Checking {len(pending)} pending log(s).")
+
+            for log in pending:
+                ymid        = log.get("_id") or log.get("ymid", "")
+                user_id     = log.get("user_id", "")
+                ts_str      = log.get("timestamp", "")
+                retry_count = int(log.get("retry_count", 0))
+
+                if not ymid or not user_id:
+                    continue
+
+                # 5분 미만이면 아직 대기
+                try:
+                    log_time = datetime.fromisoformat(ts_str)
+                    if log_time.tzinfo is None:
+                        log_time = log_time.replace(tzinfo=timezone.utc)
+                    if (now - log_time).total_seconds() < MIN_AGE_SECS:
+                        continue
+                except Exception:
+                    pass
+
+                # 최대 재시도 초과 → failed 처리
+                if retry_count >= MAX_RETRIES:
+                    db.fail_watch_log(ymid)
+                    logger.warning(f"[RETRY] Max retries exceeded: ymid={ymid} user={user_id}")
+                    continue
+
+                # Firebase에서 최신 상태 재확인 (이미 완료됐을 수 있음)
+                fresh = db.get_watch_log(ymid)
+                if not fresh or fresh.get("status") != "pending":
+                    continue
+
+                # 유저 조회
+                user_data = db.get_user(user_id)
+                if not user_data:
+                    db.increment_watch_log_retry(ymid, retry_count + 1)
+                    logger.warning(f"[RETRY] User not found: {user_id}, retry={retry_count+1}")
+                    continue
+
+                today       = now.strftime("%Y-%m-%d")
+                today_count = get_today_ad_count(user_data)
+
+                # 일일 한도 초과 → 오늘은 못 줌, failed
+                if today_count >= MAX_DAILY_ADS:
+                    db.fail_watch_log(ymid)
+                    logger.info(f"[RETRY] Daily limit for user={user_id}, marking failed.")
+                    continue
+
+                stats              = db.get_global_stats()
+                total_mined_global = stats.get("total_mined", 0.0)
+                reward_amount      = calculate_reward(total_mined_global)
+
+                if reward_amount <= 0:
+                    db.fail_watch_log(ymid)
+                    continue
+
+                new_balance  = user_data.get("balance", 0.0)          + reward_amount
+                new_personal = user_data.get("total_mined_personal", 0.0) + reward_amount
+                new_count    = today_count + 1
+
+                db.update_user(user_id, {
+                    "balance":               new_balance,
+                    "total_mined_personal":  new_personal,
+                    "today_ad_count":        new_count,
+                    "last_reset_date":       today,
+                })
+                db.add_to_total_mined(reward_amount)
+                db.store_verified_ymid(ymid)
+                db.complete_watch_log(ymid, now.isoformat())
+
+                remaining = MAX_DAILY_ADS - new_count
+                send_telegram_message_direct(
+                    user_id,
+                    f"✅ *Mining Reward!*\n\n"
+                    f"💰 Earned: `+{reward_amount:.6f}` RATE\n"
+                    f"💼 Balance: `{new_balance:.6f}` RATE\n"
+                    f"📊 Today: `{new_count}/{MAX_DAILY_ADS}` ads\n"
+                    f"⏳ Remaining today: `{remaining}` ads"
+                )
+                logger.info(f"[RETRY] Auto-rewarded: user={user_id} ymid={ymid} reward={reward_amount}")
+
+        except Exception as e:
+            logger.error(f"[RETRY] Scheduler error: {e}")
 
 
 def run_flask():
@@ -743,6 +870,11 @@ def main():
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
     logger.info("Flask postback server started.")
+
+    # 미지급 보상 자동 재시도 스케줄러
+    retry_thread = threading.Thread(target=retry_pending_rewards, daemon=True)
+    retry_thread.start()
+    logger.info("Pending reward retry scheduler started.")
 
     app = Application.builder().token(TELEGRAM_TOKEN).build()
 

@@ -153,6 +153,41 @@ class FirebaseClient:
         }
         return self.set_document("verified_ads", ymid, data)
 
+    # ── 광고 시청 로그 (미지급 자동 복구용) ───────────────────
+
+    def create_watch_log(self, ymid: str, user_id: str, timestamp: str) -> bool:
+        """광고 시청 직후 pending 기록 생성"""
+        data = {
+            "user_id": user_id,
+            "ymid": ymid,
+            "timestamp": timestamp,
+            "status": "pending",
+            "retry_count": 0,
+        }
+        return self.set_document("ad_watch_log", ymid, data)
+
+    def complete_watch_log(self, ymid: str, rewarded_at: str) -> bool:
+        """보상 지급 완료 시 status → completed"""
+        return self.update_document("ad_watch_log", ymid, {
+            "status": "completed",
+            "rewarded_at": rewarded_at,
+        })
+
+    def fail_watch_log(self, ymid: str) -> bool:
+        """최대 재시도 초과 시 status → failed"""
+        return self.update_document("ad_watch_log", ymid, {"status": "failed"})
+
+    def increment_watch_log_retry(self, ymid: str, retry_count: int) -> bool:
+        return self.update_document("ad_watch_log", ymid, {"retry_count": retry_count})
+
+    def get_watch_log(self, ymid: str) -> Optional[dict]:
+        return self.get_document("ad_watch_log", ymid)
+
+    def get_pending_watch_logs(self) -> List[dict]:
+        """status == pending 인 로그 전체 조회"""
+        return [doc for doc in self.get_collection("ad_watch_log")
+                if doc.get("status") == "pending"]
+
     def check_and_consume_ymid(self, ymid: str) -> bool:
         """ymid가 검증됐는지 확인 후 소비(삭제). 유효하면 True 반환"""
         import time
