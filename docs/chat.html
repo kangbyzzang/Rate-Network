@@ -33,7 +33,7 @@
   }
   .search-box {
     width: 100%;
-    padding: 10px 16px 10px 40px;
+    padding: 10px 16px;
     border-radius: 12px;
     border: 1px solid #2a2a4a;
     background: #1a1a2e;
@@ -42,14 +42,6 @@
     outline: none;
   }
   .search-box::placeholder { color: #555; }
-  .search-icon {
-    position: absolute;
-    left: 28px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: #555;
-    font-size: 16px;
-  }
   .search-container { position: relative; }
   .section-title {
     padding: 12px 16px 6px;
@@ -150,7 +142,6 @@
 
 <div class="search-wrap">
   <div class="search-container">
-    <span class="search-icon">🔍</span>
     <input class="search-box" id="searchInput" type="text" placeholder="Search countries..." autocomplete="off">
   </div>
 </div>
