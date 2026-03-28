@@ -851,6 +851,23 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(summary, parse_mode="Markdown")
 
 
+# ── /chatid (관리자 전용, 그룹 ID 확인) ──────────────────────
+
+async def chatid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if user.id not in ADMIN_IDS:
+        return
+    chat = update.effective_chat
+    await update.message.reply_text(
+        f"📋 Chat Info\n"
+        f"ID: `{chat.id}`\n"
+        f"Type: {chat.type}\n"
+        f"Title: {chat.title or 'N/A'}",
+        parse_mode="Markdown"
+    )
+    logger.info(f"[CHATID] chat_id={chat.id} type={chat.type} title={chat.title}")
+
+
 # ── /website ─────────────────────────────────────────────────
 
 async def website(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -905,6 +922,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("broadcast", broadcast))
     app.add_handler(CommandHandler("website", website))
+    app.add_handler(CommandHandler("chatid", chatid_command))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, web_app_data_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
