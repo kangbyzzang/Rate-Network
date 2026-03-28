@@ -21,7 +21,7 @@ from telegram.ext import (
     CallbackQueryHandler, filters, ContextTypes
 )
 
-from config import TELEGRAM_TOKEN, ADMIN_IDS, WEBSITE_URL, MINIAPP_URL, MAX_DAILY_ADS, POSTBACK_SECRET
+from config import TELEGRAM_TOKEN, ADMIN_IDS, WEBSITE_URL, MINIAPP_URL, MAX_DAILY_ADS, POSTBACK_SECRET, FORUM_GROUP_ID, FORUM_INVITE_LINK, CHAT_MINIAPP_URL
 from firebase_client import FirebaseClient
 from mining import calculate_reward, calculate_referral_reward, get_mining_stats
 
@@ -158,18 +158,135 @@ def reward():
     return jsonify({"ok": True, "reward": reward_amount, "balance": new_balance})
 
 
-def send_telegram_message_direct(user_id: str, text: str):
+def send_telegram_message_direct(user_id: str, text: str, reply_markup=None):
     """Telegram Bot API 직접 호출 (Flask 스레드에서 사용)"""
     import requests as req
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": int(user_id),
+        "text": text,
+        "parse_mode": "Markdown"
+    }
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
     try:
-        req.post(url, json={
-            "chat_id": int(user_id),
-            "text": text,
-            "parse_mode": "Markdown"
-        }, timeout=5)
+        req.post(url, json=payload, timeout=5)
     except Exception as e:
-        logger.warning(f"[POSTBACK] Failed to notify user {user_id}: {e}")
+        logger.warning(f"[SEND] Failed to notify user {user_id}: {e}")
+
+
+def telegram_create_forum_topic(name: str, icon_color: int = 0x6FB9F0) -> dict:
+    """포럼 슈퍼그룹에 토픽 생성"""
+    import requests as req
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/createForumTopic"
+    try:
+        resp = req.post(url, json={
+            "chat_id": FORUM_GROUP_ID,
+            "name": name,
+            "icon_color": icon_color
+        }, timeout=10)
+        data = resp.json()
+        if data.get("ok"):
+            return data["result"]
+        logger.error(f"[FORUM] createForumTopic failed: {data}")
+    except Exception as e:
+        logger.error(f"[FORUM] createForumTopic error: {e}")
+    return {}
+
+
+# ── Chat 방 관리 엔드포인트 ─────────────────────────────────
+
+@flask_app.route("/chat/rooms", methods=["GET"])
+def get_chat_rooms():
+    rooms = db.get_collection("country_chats")
+    return jsonify({"ok": True, "rooms": rooms})
+
+
+@flask_app.route("/chat/create_room", methods=["POST"])
+def create_chat_room():
+    import requests as req
+    data = request.json or {}
+    user_id   = str(data.get("user_id", ""))
+    country_code = data.get("country_code", "").upper()
+    country_name = data.get("country_name", "")
+    country_flag = data.get("country_flag", "")
+    secret    = data.get("secret", "")
+
+    if secret != POSTBACK_SECRET:
+        return jsonify({"error": "unauthorized"}), 403
+    if not user_id or not country_code or not country_name:
+        return jsonify({"error": "missing_params"}), 400
+
+    # 이미 존재하면 바로 초대링크 전송
+    existing = db.get_document("country_chats", country_code)
+    if existing:
+        _send_invite(user_id, existing)
+        return jsonify({"ok": True, "room": existing, "already_exists": True})
+
+    # 포럼 토픽 생성
+    topic_name = f"{country_flag} {country_name}"
+    topic = telegram_create_forum_topic(topic_name)
+    if not topic:
+        return jsonify({"error": "failed_to_create_topic"}), 500
+
+    topic_id = topic.get("message_thread_id", 0)
+
+    # Firebase 저장
+    room_data = {
+        "country_code": country_code,
+        "country_name": country_name,
+        "country_flag": country_flag,
+        "topic_id": topic_id,
+        "invite_link": FORUM_INVITE_LINK,
+        "creator_id": user_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    db.set_document("country_chats", country_code, room_data)
+    logger.info(f"[CHAT] Room created: {country_code} by user={user_id} topic_id={topic_id}")
+
+    _send_invite(user_id, room_data, created=True)
+    return jsonify({"ok": True, "room": room_data})
+
+
+@flask_app.route("/chat/join", methods=["POST"])
+def join_chat_room():
+    data = request.json or {}
+    user_id      = str(data.get("user_id", ""))
+    country_code = data.get("country_code", "").upper()
+    secret       = data.get("secret", "")
+
+    if secret != POSTBACK_SECRET:
+        return jsonify({"error": "unauthorized"}), 403
+    if not user_id or not country_code:
+        return jsonify({"error": "missing_params"}), 400
+
+    room = db.get_document("country_chats", country_code)
+    if not room:
+        return jsonify({"error": "room_not_found"}), 404
+
+    _send_invite(user_id, room)
+    return jsonify({"ok": True})
+
+
+def _send_invite(user_id: str, room: dict, created: bool = False):
+    flag  = room.get("country_flag", "")
+    name  = room.get("country_name", "")
+    link  = room.get("invite_link", FORUM_INVITE_LINK)
+    if created:
+        header = f"🎉 *{flag} {name}* chat room created!\nYou are the admin of this room."
+    else:
+        header = f"🌍 Join the *{flag} {name}* chat room!"
+    text = (
+        f"{header}\n\n"
+        f"👉 [Join RATE NETWORK Chat]({link})\n\n"
+        f"After joining, go to the *{flag} {name}* topic to start chatting!"
+    )
+    reply_markup = {
+        "inline_keyboard": [[
+            {"text": f"💬 Join {flag} {name}", "url": link}
+        ]]
+    }
+    send_telegram_message_direct(user_id, text, reply_markup=reply_markup)
 
 
 @flask_app.route("/postback")
@@ -397,6 +514,7 @@ def persistent_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
             [KeyboardButton("⛏️ Mining", web_app=WebAppInfo(url=MINIAPP_URL))],
+            [KeyboardButton("💬 Chat", web_app=WebAppInfo(url=CHAT_MINIAPP_URL))],
             [KeyboardButton("💰 Balance"), KeyboardButton("📨 Invite")],
             [KeyboardButton("🎁 Referrals"), KeyboardButton("🌐 Website")],
         ],

@@ -22,3 +22,8 @@ MAX_DAILY_ADS = 10
 # Postback 보안 시크릿 (Railway 환경변수에도 동일하게 설정)
 import os
 POSTBACK_SECRET = os.environ.get("POSTBACK_SECRET", "ratenetwork_secret_2026")
+
+# 국가별 채팅 포럼 슈퍼그룹
+FORUM_GROUP_ID = -1003822841308
+FORUM_INVITE_LINK = "https://t.me/+ZrpJQQh2L7hmMmI1"
+CHAT_MINIAPP_URL = "https://kangbyzzang.github.io/Rate-Network/chat.html"

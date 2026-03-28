@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RATE NETWORK Chat</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0f0f0f;
+    color: #fff;
+    min-height: 100vh;
+  }
+  .header {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    padding: 16px;
+    text-align: center;
+    border-bottom: 1px solid #2a2a4a;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .header h1 { font-size: 18px; font-weight: 700; color: #a78bfa; }
+  .header p  { font-size: 12px; color: #888; margin-top: 2px; }
+  .search-wrap {
+    padding: 12px 16px;
+    background: #111;
+    position: sticky;
+    top: 70px;
+    z-index: 9;
+  }
+  .search-box {
+    width: 100%;
+    padding: 10px 16px 10px 40px;
+    border-radius: 12px;
+    border: 1px solid #2a2a4a;
+    background: #1a1a2e;
+    color: #fff;
+    font-size: 14px;
+    outline: none;
+  }
+  .search-box::placeholder { color: #555; }
+  .search-icon {
+    position: absolute;
+    left: 28px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #555;
+    font-size: 16px;
+  }
+  .search-container { position: relative; }
+  .section-title {
+    padding: 12px 16px 6px;
+    font-size: 11px;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .room-list { padding: 0 16px 80px; }
+  .room-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    background: #1a1a2e;
+    border-radius: 12px;
+    margin-bottom: 8px;
+    border: 1px solid #2a2a4a;
+    transition: border-color 0.2s;
+  }
+  .room-card:hover { border-color: #a78bfa; }
+  .room-info { display: flex; align-items: center; gap: 10px; }
+  .room-flag { font-size: 28px; line-height: 1; }
+  .room-name { font-size: 14px; font-weight: 600; color: #e2e8f0; }
+  .room-meta { font-size: 11px; color: #666; margin-top: 2px; }
+  .btn {
+    padding: 7px 16px;
+    border-radius: 20px;
+    border: none;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    white-space: nowrap;
+  }
+  .btn:active { opacity: 0.7; }
+  .btn-join   { background: #a78bfa; color: #fff; }
+  .btn-create { background: transparent; color: #a78bfa; border: 1px solid #a78bfa; }
+  .divider {
+    height: 1px;
+    background: #2a2a4a;
+    margin: 8px 0 12px;
+  }
+  .empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: #555;
+  }
+  .empty-state p { font-size: 14px; }
+  .toast {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #a78bfa;
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    opacity: 0;
+    transition: opacity 0.3s;
+    z-index: 100;
+    white-space: nowrap;
+  }
+  .toast.show { opacity: 1; }
+  .loading {
+    text-align: center;
+    padding: 40px;
+    color: #555;
+  }
+  .spinner {
+    width: 32px; height: 32px;
+    border: 3px solid #2a2a4a;
+    border-top-color: #a78bfa;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 12px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .badge {
+    background: #22c55e22;
+    color: #22c55e;
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 10px;
+    margin-left: 6px;
+    font-weight: 600;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>💬 RATE NETWORK Chat</h1>
+  <p>Join or create a country chat room</p>
+</div>
+
+<div class="search-wrap">
+  <div class="search-container">
+    <span class="search-icon">🔍</span>
+    <input class="search-box" id="searchInput" type="text" placeholder="Search countries..." autocomplete="off">
+  </div>
+</div>
+
+<div id="loadingState" class="loading">
+  <div class="spinner"></div>
+  <p>Loading rooms...</p>
+</div>
+
+<div id="mainContent" style="display:none;">
+  <div id="activeSection">
+    <div class="section-title">🟢 Active Rooms</div>
+    <div class="room-list" id="activeRooms"></div>
+  </div>
+  <div class="divider" style="margin:0 16px;"></div>
+  <div id="availableSection">
+    <div class="section-title">✨ Create a Room</div>
+    <div class="room-list" id="availableRooms"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const tg = window.Telegram?.WebApp;
+if (tg) { tg.ready(); tg.expand(); }
+
+const userId   = tg?.initDataUnsafe?.user?.id?.toString() || "unknown";
+const API_BASE = "https://worker-production-7fdd.up.railway.app";
+const SECRET   = "ratenetwork_secret_2026";
+
+// ── 전체 국가 목록 ─────────────────────────────────────────
+const ALL_COUNTRIES = [
+  {code:"AF",name:"Afghanistan",flag:"🇦🇫"},
+  {code:"AL",name:"Albania",flag:"🇦🇱"},
+  {code:"DZ",name:"Algeria",flag:"🇩🇿"},
+  {code:"AD",name:"Andorra",flag:"🇦🇩"},
+  {code:"AO",name:"Angola",flag:"🇦🇴"},
+  {code:"AG",name:"Antigua and Barbuda",flag:"🇦🇬"},
+  {code:"AR",name:"Argentina",flag:"🇦🇷"},
+  {code:"AM",name:"Armenia",flag:"🇦🇲"},
+  {code:"AU",name:"Australia",flag:"🇦🇺"},
+  {code:"AT",name:"Austria",flag:"🇦🇹"},
+  {code:"AZ",name:"Azerbaijan",flag:"🇦🇿"},
+  {code:"BS",name:"Bahamas",flag:"🇧🇸"},
+  {code:"BH",name:"Bahrain",flag:"🇧🇭"},
+  {code:"BD",name:"Bangladesh",flag:"🇧🇩"},
+  {code:"BB",name:"Barbados",flag:"🇧🇧"},
+  {code:"BY",name:"Belarus",flag:"🇧🇾"},
+  {code:"BE",name:"Belgium",flag:"🇧🇪"},
+  {code:"BZ",name:"Belize",flag:"🇧🇿"},
+  {code:"BJ",name:"Benin",flag:"🇧🇯"},
+  {code:"BT",name:"Bhutan",flag:"🇧🇹"},
+  {code:"BO",name:"Bolivia",flag:"🇧🇴"},
+  {code:"BA",name:"Bosnia and Herzegovina",flag:"🇧🇦"},
+  {code:"BW",name:"Botswana",flag:"🇧🇼"},
+  {code:"BR",name:"Brazil",flag:"🇧🇷"},
+  {code:"BN",name:"Brunei",flag:"🇧🇳"},
+  {code:"BG",name:"Bulgaria",flag:"🇧🇬"},
+  {code:"BF",name:"Burkina Faso",flag:"🇧🇫"},
+  {code:"BI",name:"Burundi",flag:"🇧🇮"},
+  {code:"CV",name:"Cape Verde",flag:"🇨🇻"},
+  {code:"KH",name:"Cambodia",flag:"🇰🇭"},
+  {code:"CM",name:"Cameroon",flag:"🇨🇲"},
+  {code:"CA",name:"Canada",flag:"🇨🇦"},
+  {code:"CF",name:"Central African Republic",flag:"🇨🇫"},
+  {code:"TD",name:"Chad",flag:"🇹🇩"},
+  {code:"CL",name:"Chile",flag:"🇨🇱"},
+  {code:"CN",name:"China",flag:"🇨🇳"},
+  {code:"CO",name:"Colombia",flag:"🇨🇴"},
+  {code:"KM",name:"Comoros",flag:"🇰🇲"},
+  {code:"CG",name:"Congo",flag:"🇨🇬"},
+  {code:"CR",name:"Costa Rica",flag:"🇨🇷"},
+  {code:"HR",name:"Croatia",flag:"🇭🇷"},
+  {code:"CU",name:"Cuba",flag:"🇨🇺"},
+  {code:"CY",name:"Cyprus",flag:"🇨🇾"},
+  {code:"CZ",name:"Czech Republic",flag:"🇨🇿"},
+  {code:"DK",name:"Denmark",flag:"🇩🇰"},
+  {code:"DJ",name:"Djibouti",flag:"🇩🇯"},
+  {code:"DM",name:"Dominica",flag:"🇩🇲"},
+  {code:"DO",name:"Dominican Republic",flag:"🇩🇴"},
+  {code:"EC",name:"Ecuador",flag:"🇪🇨"},
+  {code:"EG",name:"Egypt",flag:"🇪🇬"},
+  {code:"SV",name:"El Salvador",flag:"🇸🇻"},
+  {code:"GQ",name:"Equatorial Guinea",flag:"🇬🇶"},
+  {code:"ER",name:"Eritrea",flag:"🇪🇷"},
+  {code:"EE",name:"Estonia",flag:"🇪🇪"},
+  {code:"SZ",name:"Eswatini",flag:"🇸🇿"},
+  {code:"ET",name:"Ethiopia",flag:"🇪🇹"},
+  {code:"FJ",name:"Fiji",flag:"🇫🇯"},
+  {code:"FI",name:"Finland",flag:"🇫🇮"},
+  {code:"FR",name:"France",flag:"🇫🇷"},
+  {code:"GA",name:"Gabon",flag:"🇬🇦"},
+  {code:"GM",name:"Gambia",flag:"🇬🇲"},
+  {code:"GE",name:"Georgia",flag:"🇬🇪"},
+  {code:"DE",name:"Germany",flag:"🇩🇪"},
+  {code:"GH",name:"Ghana",flag:"🇬🇭"},
+  {code:"GR",name:"Greece",flag:"🇬🇷"},
+  {code:"GD",name:"Grenada",flag:"🇬🇩"},
+  {code:"GT",name:"Guatemala",flag:"🇬🇹"},
+  {code:"GN",name:"Guinea",flag:"🇬🇳"},
+  {code:"GW",name:"Guinea-Bissau",flag:"🇬🇼"},
+  {code:"GY",name:"Guyana",flag:"🇬🇾"},
+  {code:"HT",name:"Haiti",flag:"🇭🇹"},
+  {code:"HN",name:"Honduras",flag:"🇭🇳"},
+  {code:"HU",name:"Hungary",flag:"🇭🇺"},
+  {code:"IS",name:"Iceland",flag:"🇮🇸"},
+  {code:"IN",name:"India",flag:"🇮🇳"},
+  {code:"ID",name:"Indonesia",flag:"🇮🇩"},
+  {code:"IR",name:"Iran",flag:"🇮🇷"},
+  {code:"IQ",name:"Iraq",flag:"🇮🇶"},
+  {code:"IE",name:"Ireland",flag:"🇮🇪"},
+  {code:"IL",name:"Israel",flag:"🇮🇱"},
+  {code:"IT",name:"Italy",flag:"🇮🇹"},
+  {code:"JM",name:"Jamaica",flag:"🇯🇲"},
+  {code:"JP",name:"Japan",flag:"🇯🇵"},
+  {code:"JO",name:"Jordan",flag:"🇯🇴"},
+  {code:"KZ",name:"Kazakhstan",flag:"🇰🇿"},
+  {code:"KE",name:"Kenya",flag:"🇰🇪"},
+  {code:"KI",name:"Kiribati",flag:"🇰🇮"},
+  {code:"KW",name:"Kuwait",flag:"🇰🇼"},
+  {code:"KG",name:"Kyrgyzstan",flag:"🇰🇬"},
+  {code:"LA",name:"Laos",flag:"🇱🇦"},
+  {code:"LV",name:"Latvia",flag:"🇱🇻"},
+  {code:"LB",name:"Lebanon",flag:"🇱🇧"},
+  {code:"LS",name:"Lesotho",flag:"🇱🇸"},
+  {code:"LR",name:"Liberia",flag:"🇱🇷"},
+  {code:"LY",name:"Libya",flag:"🇱🇾"},
+  {code:"LI",name:"Liechtenstein",flag:"🇱🇮"},
+  {code:"LT",name:"Lithuania",flag:"🇱🇹"},
+  {code:"LU",name:"Luxembourg",flag:"🇱🇺"},
+  {code:"MG",name:"Madagascar",flag:"🇲🇬"},
+  {code:"MW",name:"Malawi",flag:"🇲🇼"},
+  {code:"MY",name:"Malaysia",flag:"🇲🇾"},
+  {code:"MV",name:"Maldives",flag:"🇲🇻"},
+  {code:"ML",name:"Mali",flag:"🇲🇱"},
+  {code:"MT",name:"Malta",flag:"🇲🇹"},
+  {code:"MH",name:"Marshall Islands",flag:"🇲🇭"},
+  {code:"MR",name:"Mauritania",flag:"🇲🇷"},
+  {code:"MU",name:"Mauritius",flag:"🇲🇺"},
+  {code:"MX",name:"Mexico",flag:"🇲🇽"},
+  {code:"FM",name:"Micronesia",flag:"🇫🇲"},
+  {code:"MD",name:"Moldova",flag:"🇲🇩"},
+  {code:"MC",name:"Monaco",flag:"🇲🇨"},
+  {code:"MN",name:"Mongolia",flag:"🇲🇳"},
+  {code:"ME",name:"Montenegro",flag:"🇲🇪"},
+  {code:"MA",name:"Morocco",flag:"🇲🇦"},
+  {code:"MZ",name:"Mozambique",flag:"🇲🇿"},
+  {code:"MM",name:"Myanmar",flag:"🇲🇲"},
+  {code:"NA",name:"Namibia",flag:"🇳🇦"},
+  {code:"NR",name:"Nauru",flag:"🇳🇷"},
+  {code:"NP",name:"Nepal",flag:"🇳🇵"},
+  {code:"NL",name:"Netherlands",flag:"🇳🇱"},
+  {code:"NZ",name:"New Zealand",flag:"🇳🇿"},
+  {code:"NI",name:"Nicaragua",flag:"🇳🇮"},
+  {code:"NE",name:"Niger",flag:"🇳🇪"},
+  {code:"NG",name:"Nigeria",flag:"🇳🇬"},
+  {code:"NO",name:"Norway",flag:"🇳🇴"},
+  {code:"OM",name:"Oman",flag:"🇴🇲"},
+  {code:"PK",name:"Pakistan",flag:"🇵🇰"},
+  {code:"PW",name:"Palau",flag:"🇵🇼"},
+  {code:"PA",name:"Panama",flag:"🇵🇦"},
+  {code:"PG",name:"Papua New Guinea",flag:"🇵🇬"},
+  {code:"PY",name:"Paraguay",flag:"🇵🇾"},
+  {code:"PE",name:"Peru",flag:"🇵🇪"},
+  {code:"PH",name:"Philippines",flag:"🇵🇭"},
+  {code:"PL",name:"Poland",flag:"🇵🇱"},
+  {code:"PT",name:"Portugal",flag:"🇵🇹"},
+  {code:"QA",name:"Qatar",flag:"🇶🇦"},
+  {code:"RO",name:"Romania",flag:"🇷🇴"},
+  {code:"RU",name:"Russia",flag:"🇷🇺"},
+  {code:"RW",name:"Rwanda",flag:"🇷🇼"},
+  {code:"KN",name:"Saint Kitts and Nevis",flag:"🇰🇳"},
+  {code:"LC",name:"Saint Lucia",flag:"🇱🇨"},
+  {code:"VC",name:"Saint Vincent and the Grenadines",flag:"🇻🇨"},
+  {code:"WS",name:"Samoa",flag:"🇼🇸"},
+  {code:"SM",name:"San Marino",flag:"🇸🇲"},
+  {code:"ST",name:"Sao Tome and Principe",flag:"🇸🇹"},
+  {code:"SA",name:"Saudi Arabia",flag:"🇸🇦"},
+  {code:"SN",name:"Senegal",flag:"🇸🇳"},
+  {code:"RS",name:"Serbia",flag:"🇷🇸"},
+  {code:"SC",name:"Seychelles",flag:"🇸🇨"},
+  {code:"SL",name:"Sierra Leone",flag:"🇸🇱"},
+  {code:"SG",name:"Singapore",flag:"🇸🇬"},
+  {code:"SK",name:"Slovakia",flag:"🇸🇰"},
+  {code:"SI",name:"Slovenia",flag:"🇸🇮"},
+  {code:"SB",name:"Solomon Islands",flag:"🇸🇧"},
+  {code:"SO",name:"Somalia",flag:"🇸🇴"},
+  {code:"ZA",name:"South Africa",flag:"🇿🇦"},
+  {code:"SS",name:"South Sudan",flag:"🇸🇸"},
+  {code:"ES",name:"Spain",flag:"🇪🇸"},
+  {code:"LK",name:"Sri Lanka",flag:"🇱🇰"},
+  {code:"SD",name:"Sudan",flag:"🇸🇩"},
+  {code:"SR",name:"Suriname",flag:"🇸🇷"},
+  {code:"SE",name:"Sweden",flag:"🇸🇪"},
+  {code:"CH",name:"Switzerland",flag:"🇨🇭"},
+  {code:"SY",name:"Syria",flag:"🇸🇾"},
+  {code:"TW",name:"Taiwan",flag:"🇹🇼"},
+  {code:"TJ",name:"Tajikistan",flag:"🇹🇯"},
+  {code:"TZ",name:"Tanzania",flag:"🇹🇿"},
+  {code:"TH",name:"Thailand",flag:"🇹🇭"},
+  {code:"TL",name:"Timor-Leste",flag:"🇹🇱"},
+  {code:"TG",name:"Togo",flag:"🇹🇬"},
+  {code:"TO",name:"Tonga",flag:"🇹🇴"},
+  {code:"TT",name:"Trinidad and Tobago",flag:"🇹🇹"},
+  {code:"TN",name:"Tunisia",flag:"🇹🇳"},
+  {code:"TR",name:"Turkey",flag:"🇹🇷"},
+  {code:"TM",name:"Turkmenistan",flag:"🇹🇲"},
+  {code:"TV",name:"Tuvalu",flag:"🇹🇻"},
+  {code:"UG",name:"Uganda",flag:"🇺🇬"},
+  {code:"UA",name:"Ukraine",flag:"🇺🇦"},
+  {code:"AE",name:"United Arab Emirates",flag:"🇦🇪"},
+  {code:"GB",name:"United Kingdom",flag:"🇬🇧"},
+  {code:"US",name:"United States",flag:"🇺🇸"},
+  {code:"UY",name:"Uruguay",flag:"🇺🇾"},
+  {code:"UZ",name:"Uzbekistan",flag:"🇺🇿"},
+  {code:"VU",name:"Vanuatu",flag:"🇻🇺"},
+  {code:"VE",name:"Venezuela",flag:"🇻🇪"},
+  {code:"VN",name:"Vietnam",flag:"🇻🇳"},
+  {code:"YE",name:"Yemen",flag:"🇾🇪"},
+  {code:"ZM",name:"Zambia",flag:"🇿🇲"},
+  {code:"ZW",name:"Zimbabwe",flag:"🇿🇼"},
+  {code:"KR",name:"South Korea",flag:"🇰🇷"},
+  {code:"KP",name:"North Korea",flag:"🇰🇵"},
+  {code:"PS",name:"Palestine",flag:"🇵🇸"},
+  {code:"XK",name:"Kosovo",flag:"🇽🇰"},
+];
+
+let activeRooms = {};   // country_code → room 객체
+let query = "";
+
+// ── 초기 로드 ──────────────────────────────────────────────
+async function loadRooms() {
+  try {
+    const res  = await fetch(`${API_BASE}/chat/rooms`);
+    const data = await res.json();
+    activeRooms = {};
+    (data.rooms || []).forEach(r => { activeRooms[r.country_code] = r; });
+  } catch(e) {
+    console.error("Failed to load rooms:", e);
+  }
+  document.getElementById("loadingState").style.display  = "none";
+  document.getElementById("mainContent").style.display   = "block";
+  renderAll();
+}
+
+function renderAll() {
+  const q = query.toLowerCase();
+  const filtered = ALL_COUNTRIES.filter(c =>
+    c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q)
+  );
+
+  const active    = filtered.filter(c => activeRooms[c.code]);
+  const available = filtered.filter(c => !activeRooms[c.code]);
+
+  // Active rooms
+  const activeEl = document.getElementById("activeRooms");
+  document.getElementById("activeSection").style.display = active.length ? "block" : "none";
+  activeEl.innerHTML = active.map(c => {
+    const r = activeRooms[c.code];
+    return `
+    <div class="room-card">
+      <div class="room-info">
+        <span class="room-flag">${c.flag}</span>
+        <div>
+          <div class="room-name">${c.name} <span class="badge">ACTIVE</span></div>
+          <div class="room-meta">Created by user #${r.creator_id?.slice(-4) || "???"}</div>
+        </div>
+      </div>
+      <button class="btn btn-join" onclick="joinRoom('${c.code}')">Join</button>
+    </div>`;
+  }).join("");
+
+  // Available (create)
+  const availEl = document.getElementById("availableRooms");
+  document.getElementById("availableSection").style.display = available.length ? "block" : "none";
+  availEl.innerHTML = available.map(c => `
+    <div class="room-card">
+      <div class="room-info">
+        <span class="room-flag">${c.flag}</span>
+        <div>
+          <div class="room-name">${c.name}</div>
+          <div class="room-meta">No room yet</div>
+        </div>
+      </div>
+      <button class="btn btn-create" onclick="createRoom('${c.code}','${c.name}','${c.flag}')">Create</button>
+    </div>
+  `).join("");
+
+  if (filtered.length === 0) {
+    activeEl.innerHTML  = "";
+    availEl.innerHTML   = `<div class="empty-state"><p>No countries found for "${query}"</p></div>`;
+    document.getElementById("activeSection").style.display    = "none";
+    document.getElementById("availableSection").style.display = "block";
+  }
+}
+
+// ── 방 참여 ────────────────────────────────────────────────
+async function joinRoom(code) {
+  showToast("Sending invite link to Telegram...");
+  try {
+    const res  = await fetch(`${API_BASE}/chat/join`, {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ user_id: userId, country_code: code, secret: SECRET })
+    });
+    const data = await res.json();
+    if (data.ok) showToast("✅ Check your Telegram DM for the invite link!");
+    else         showToast("❌ " + (data.error || "Failed"));
+  } catch(e) {
+    showToast("❌ Connection error");
+  }
+}
+
+// ── 방 생성 ────────────────────────────────────────────────
+async function createRoom(code, name, flag) {
+  if (userId === "unknown") {
+    showToast("⚠️ Please open from Telegram");
+    return;
+  }
+  showToast("Creating room...");
+  try {
+    const res  = await fetch(`${API_BASE}/chat/create_room`, {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ user_id: userId, country_code: code, country_name: name, country_flag: flag, secret: SECRET })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      activeRooms[code] = data.room;
+      renderAll();
+      if (data.already_exists) showToast("✅ Room already exists! Invite link sent.");
+      else                     showToast("🎉 Room created! Check your Telegram DM!");
+    } else {
+      showToast("❌ " + (data.error || "Failed"));
+    }
+  } catch(e) {
+    showToast("❌ Connection error");
+  }
+}
+
+// ── 검색 ──────────────────────────────────────────────────
+document.getElementById("searchInput").addEventListener("input", function() {
+  query = this.value.trim();
+  renderAll();
+});
+
+// ── 토스트 ────────────────────────────────────────────────
+function showToast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => el.classList.remove("show"), 3000);
+}
+
+loadRooms();
+</script>
+</body>
+</html>
