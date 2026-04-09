@@ -16,10 +16,9 @@ WEBSITE_URL = "https://rate-network-the-future-of-decentralized-finance-73490949
 # 미니앱 URL - GitHub Pages 배포 후 변경
 MINIAPP_URL = "https://kangbyzzang.github.io/Rate-Network/"
 
-# 채굴 설정
-MAX_DAILY_ADS = 10
+# 채굴 설정 (하루 1회 버튼 클릭으로 채굴)
+DAILY_MINING_ONCE = True   # 광고 없이 하루 1회 버튼으로 채굴
 
-# Postback 보안 시크릿 (Railway 환경변수에도 동일하게 설정)
 import os
 POSTBACK_SECRET = os.environ.get("POSTBACK_SECRET", "ratenetwork_secret_2026")
 

@@ -21,7 +21,7 @@ from telegram.ext import (
     CallbackQueryHandler, filters, ContextTypes
 )
 
-from config import TELEGRAM_TOKEN, ADMIN_IDS, WEBSITE_URL, MINIAPP_URL, MAX_DAILY_ADS, POSTBACK_SECRET, FORUM_GROUP_ID, FORUM_INVITE_LINK, CHAT_MINIAPP_URL
+from config import TELEGRAM_TOKEN, ADMIN_IDS, WEBSITE_URL, MINIAPP_URL, POSTBACK_SECRET, FORUM_GROUP_ID, FORUM_INVITE_LINK, CHAT_MINIAPP_URL
 from firebase_client import FirebaseClient
 from mining import calculate_reward, calculate_referral_reward, get_mining_stats
 
@@ -51,111 +51,8 @@ def health():
     return jsonify({"status": "ok"})
 
 
-@flask_app.route("/log_watch", methods=["POST", "OPTIONS"])
-def log_watch():
-    """광고 시청 직후 pending 기록 — /reward 실패 시 자동 복구 근거"""
-    if request.method == "OPTIONS":
-        return jsonify({"ok": True})
-
-    data = request.get_json(silent=True) or {}
-    user_id = str(data.get("user_id", "")).strip()
-    ymid    = data.get("ymid", "")
-    secret  = data.get("secret", "")
-
-    if secret != POSTBACK_SECRET:
-        return jsonify({"error": "unauthorized"}), 401
-
-    if not user_id or user_id == "unknown" or not ymid:
-        return jsonify({"error": "missing_params"}), 400
-
-    timestamp = datetime.now(timezone.utc).isoformat()
-    db.create_watch_log(ymid, user_id, timestamp)
-    logger.info(f"[LOG_WATCH] Pending logged: user_id={user_id} ymid={ymid}")
-    return jsonify({"ok": True})
 
 
-@flask_app.route("/reward", methods=["POST", "OPTIONS"])
-def reward():
-    if request.method == "OPTIONS":
-        return jsonify({"ok": True})
-
-    data = request.get_json(silent=True) or {}
-    user_id = str(data.get("user_id", "")).strip()
-    secret  = data.get("secret", "")
-    ymid    = data.get("ymid", "")
-
-    logger.info(f"[REWARD] Received: user_id={user_id!r} ymid={ymid!r}")
-
-    if secret != POSTBACK_SECRET:
-        logger.warning(f"[REWARD] Invalid secret from user={user_id}")
-        return jsonify({"error": "unauthorized"}), 401
-
-    if not user_id or user_id == "unknown":
-        logger.warning(f"[REWARD] Missing or unknown user_id: {user_id!r}")
-        return jsonify({"error": "missing_user_id", "message": "Could not identify user. Please restart the mini app from Telegram."}), 400
-
-    # ymid 중복 방지: postback이 먼저 처리했으면 스킵
-    if ymid and db.check_and_consume_ymid(ymid):
-        logger.info(f"[REWARD] Duplicate ymid ignored: {ymid}")
-        return jsonify({"error": "already_rewarded"}), 200
-
-    user_data = db.get_user(user_id)
-    if not user_data:
-        logger.warning(f"[REWARD] User not found in Firebase: {user_id!r}. Auto-registering...")
-        # 봇을 먼저 시작하지 않은 유저 자동 등록 시도
-        db.create_user(user_id, {
-            "balance": 0.0, "total_mined_personal": 0.0,
-            "today_ad_count": 0, "last_reset_date": "",
-            "referral_code": user_id[:8], "referral_earnings": 0.0,
-            "referred_by": None
-        })
-        user_data = db.get_user(user_id)
-    if not user_data:
-        return jsonify({"error": "user_not_found", "message": "User not found. Please start the bot first with /start"}), 404
-
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    today_count = get_today_ad_count(user_data)
-
-    if today_count >= MAX_DAILY_ADS:
-        return jsonify({"error": "daily_limit", "message": "Daily limit reached!"}), 200
-
-    stats = db.get_global_stats()
-    total_mined_global = stats.get("total_mined", 0.0)
-    reward_amount = calculate_reward(total_mined_global)
-
-    if reward_amount <= 0:
-        return jsonify({"error": "supply_exhausted"}), 200
-
-    new_balance = user_data.get("balance", 0.0) + reward_amount
-    new_personal = user_data.get("total_mined_personal", 0.0) + reward_amount
-    new_count = today_count + 1
-
-    db.update_user(user_id, {
-        "balance": new_balance,
-        "total_mined_personal": new_personal,
-        "today_ad_count": new_count,
-        "last_reset_date": today,
-    })
-    db.add_to_total_mined(reward_amount)
-
-    # ymid 소비 기록 (postback이 나중에 와도 중복 지급 방지)
-    now_iso = datetime.now(timezone.utc).isoformat()
-    if ymid:
-        db.store_verified_ymid(ymid)
-        db.complete_watch_log(ymid, now_iso)  # 미지급 복구 큐에서 제거
-
-    remaining = MAX_DAILY_ADS - new_count
-    send_telegram_message_direct(
-        user_id,
-        f"✅ *Mining Reward!*\n\n"
-        f"💰 Earned: `+{reward_amount:.6f}` RATE\n"
-        f"💼 Balance: `{new_balance:.6f}` RATE\n"
-        f"📊 Today: `{new_count}/{MAX_DAILY_ADS}` ads\n"
-        f"⏳ Remaining today: `{remaining}` ads"
-    )
-
-    logger.info(f"[REWARD] user={user_id} reward={reward_amount}")
-    return jsonify({"ok": True, "reward": reward_amount, "balance": new_balance})
 
 
 def send_telegram_message_direct(user_id: str, text: str, reply_markup=None):
@@ -289,186 +186,6 @@ def _send_invite(user_id: str, room: dict, created: bool = False):
     send_telegram_message_direct(user_id, text, reply_markup=reply_markup)
 
 
-@flask_app.route("/postback")
-def postback():
-    secret  = request.args.get("secret", "")
-    ymid    = request.args.get("ymid", "")
-    # {telegram_id} 매크로로 직접 받은 user_id (postback URL에 포함)
-    tg_id   = request.args.get("user_id", "").strip()
-
-    logger.info(f"[POSTBACK] Received: tg_id={tg_id!r} ymid={ymid!r} secret={'ok' if secret == POSTBACK_SECRET else 'bad'}")
-
-    if secret != POSTBACK_SECRET:
-        logger.warning(f"[POSTBACK] Invalid secret: {secret}")
-        return jsonify({"error": "unauthorized"}), 401
-
-    # user_id 결정: URL 파라미터 우선, 없으면 ymid에서 파싱
-    if tg_id:
-        user_id = tg_id
-    elif ymid and "_" in ymid:
-        user_id = ymid.split("_")[0]
-    else:
-        logger.warning(f"[POSTBACK] Cannot determine user_id: tg_id={tg_id!r} ymid={ymid!r}")
-        return jsonify({"error": "cannot_identify_user"}), 400
-
-    # 중복 보상 방지
-    if db.check_and_consume_ymid(ymid):
-        logger.info(f"[POSTBACK] Duplicate ymid ignored: {ymid}")
-        return jsonify({"ok": True})
-
-    user_data = db.get_user(user_id)
-    if not user_data:
-        logger.warning(f"[POSTBACK] User not found: {user_id}")
-        return jsonify({"ok": True})
-
-    # 일일 한도 확인
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    today_count = get_today_ad_count(user_data)
-    if today_count >= MAX_DAILY_ADS:
-        logger.info(f"[POSTBACK] Daily limit reached for user: {user_id}")
-        send_telegram_message_direct(user_id, "⏰ *Daily limit reached!*\n\nCome back tomorrow (UTC midnight).")
-        return jsonify({"ok": True})
-
-    # 리워드 계산
-    stats = db.get_global_stats()
-    total_mined_global = stats.get("total_mined", 0.0)
-    reward = calculate_reward(total_mined_global)
-
-    if reward <= 0:
-        return jsonify({"ok": True, "msg": "supply exhausted"})
-
-    # ymid 소비 처리 (중복 방지)
-    db.store_verified_ymid(ymid)
-    db.check_and_consume_ymid(ymid)
-
-    # DB 업데이트
-    new_balance = user_data.get("balance", 0.0) + reward
-    new_personal = user_data.get("total_mined_personal", 0.0) + reward
-    new_count = today_count + 1
-
-    db.update_user(user_id, {
-        "balance": new_balance,
-        "total_mined_personal": new_personal,
-        "today_ad_count": new_count,
-        "last_reset_date": today,
-    })
-    db.add_to_total_mined(reward)
-
-    # 유저에게 보상 알림 (직접 Bot API 호출)
-    remaining = MAX_DAILY_ADS - new_count
-    send_telegram_message_direct(
-        user_id,
-        f"✅ *Mining Reward!*\n\n"
-        f"💰 Earned: `+{reward:.6f}` RATE\n"
-        f"💼 Balance: `{new_balance:.6f}` RATE\n"
-        f"📊 Today: `{new_count}/{MAX_DAILY_ADS}` ads\n"
-        f"⏳ Remaining today: `{remaining}` ads"
-    )
-
-    logger.info(f"[POSTBACK] Reward granted: user={user_id} reward={reward}")
-    return jsonify({"ok": True})
-
-
-def retry_pending_rewards():
-    """미지급 보상 자동 재시도 — 10분마다 실행되는 백그라운드 스레드"""
-    import time as _time
-    MAX_RETRIES   = 5
-    MIN_AGE_SECS  = 300   # 5분 이상 지난 것만 재시도
-    INTERVAL_SECS = 600   # 10분마다 실행
-
-    logger.info("[RETRY] Pending reward retry scheduler started.")
-
-    while True:
-        _time.sleep(INTERVAL_SECS)
-        try:
-            pending = db.get_pending_watch_logs()
-            if not pending:
-                continue
-
-            now = datetime.now(timezone.utc)
-            logger.info(f"[RETRY] Checking {len(pending)} pending log(s).")
-
-            for log in pending:
-                ymid        = log.get("_id") or log.get("ymid", "")
-                user_id     = log.get("user_id", "")
-                ts_str      = log.get("timestamp", "")
-                retry_count = int(log.get("retry_count", 0))
-
-                if not ymid or not user_id:
-                    continue
-
-                # 5분 미만이면 아직 대기
-                try:
-                    log_time = datetime.fromisoformat(ts_str)
-                    if log_time.tzinfo is None:
-                        log_time = log_time.replace(tzinfo=timezone.utc)
-                    if (now - log_time).total_seconds() < MIN_AGE_SECS:
-                        continue
-                except Exception:
-                    pass
-
-                # 최대 재시도 초과 → failed 처리
-                if retry_count >= MAX_RETRIES:
-                    db.fail_watch_log(ymid)
-                    logger.warning(f"[RETRY] Max retries exceeded: ymid={ymid} user={user_id}")
-                    continue
-
-                # Firebase에서 최신 상태 재확인 (이미 완료됐을 수 있음)
-                fresh = db.get_watch_log(ymid)
-                if not fresh or fresh.get("status") != "pending":
-                    continue
-
-                # 유저 조회
-                user_data = db.get_user(user_id)
-                if not user_data:
-                    db.increment_watch_log_retry(ymid, retry_count + 1)
-                    logger.warning(f"[RETRY] User not found: {user_id}, retry={retry_count+1}")
-                    continue
-
-                today       = now.strftime("%Y-%m-%d")
-                today_count = get_today_ad_count(user_data)
-
-                # 일일 한도 초과 → 오늘은 못 줌, failed
-                if today_count >= MAX_DAILY_ADS:
-                    db.fail_watch_log(ymid)
-                    logger.info(f"[RETRY] Daily limit for user={user_id}, marking failed.")
-                    continue
-
-                stats              = db.get_global_stats()
-                total_mined_global = stats.get("total_mined", 0.0)
-                reward_amount      = calculate_reward(total_mined_global)
-
-                if reward_amount <= 0:
-                    db.fail_watch_log(ymid)
-                    continue
-
-                new_balance  = user_data.get("balance", 0.0)          + reward_amount
-                new_personal = user_data.get("total_mined_personal", 0.0) + reward_amount
-                new_count    = today_count + 1
-
-                db.update_user(user_id, {
-                    "balance":               new_balance,
-                    "total_mined_personal":  new_personal,
-                    "today_ad_count":        new_count,
-                    "last_reset_date":       today,
-                })
-                db.add_to_total_mined(reward_amount)
-                db.store_verified_ymid(ymid)
-                db.complete_watch_log(ymid, now.isoformat())
-
-                remaining = MAX_DAILY_ADS - new_count
-                send_telegram_message_direct(
-                    user_id,
-                    f"✅ *Mining Reward!*\n\n"
-                    f"💰 Earned: `+{reward_amount:.6f}` RATE\n"
-                    f"💼 Balance: `{new_balance:.6f}` RATE\n"
-                    f"📊 Today: `{new_count}/{MAX_DAILY_ADS}` ads\n"
-                    f"⏳ Remaining today: `{remaining}` ads"
-                )
-                logger.info(f"[RETRY] Auto-rewarded: user={user_id} ymid={ymid} reward={reward_amount}")
-
-        except Exception as e:
-            logger.error(f"[RETRY] Scheduler error: {e}")
 
 
 def run_flask():
@@ -489,31 +206,16 @@ def get_today_utc() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
-def get_today_ad_count(user_data: dict) -> int:
-    """오늘 광고 시청 횟수 (UTC 기준 자동 초기화)"""
-    today = get_today_utc()
-    if user_data.get("last_reset_date") != today:
-        return 0
-    return user_data.get("today_ad_count", 0)
-
-
-def main_menu_keyboard(miniapp_url: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("⛏️ Mining", web_app=WebAppInfo(url=miniapp_url))],
-        [
-            InlineKeyboardButton("💰 Balance", callback_data="balance"),
-            InlineKeyboardButton("📨 Invite", callback_data="invite"),
-        ],
-        [InlineKeyboardButton("🎁 Check Referral Rewards", callback_data="referral_reward")],
-        [InlineKeyboardButton("🌐 Website", url=WEBSITE_URL)],
-    ])
+def has_mined_today(user_data: dict) -> bool:
+    """오늘 이미 채굴했는지 확인 (UTC 기준)"""
+    return user_data.get("last_reset_date") == get_today_utc()
 
 
 def persistent_keyboard() -> ReplyKeyboardMarkup:
     """항상 하단에 고정되는 메인 키보드"""
     return ReplyKeyboardMarkup(
         [
-            [KeyboardButton("⛏️ Mining", web_app=WebAppInfo(url=MINIAPP_URL))],
+            [KeyboardButton("⛏️ Mining")],
             [KeyboardButton("💬 Chat", web_app=WebAppInfo(url=CHAT_MINIAPP_URL))],
             [KeyboardButton("💰 Balance"), KeyboardButton("📨 Invite")],
             [KeyboardButton("🎁 Referrals"), KeyboardButton("🌐 Website")],
@@ -647,13 +349,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         balance = user_data.get("balance", 0.0)
         total_mined = user_data.get("total_mined_personal", 0.0)
-        today_count = get_today_ad_count(user_data)
+        mined_today = has_mined_today(user_data)
 
         await query.message.reply_text(
             f"💰 *Your Balance*\n\n"
             f"┌ Balance: `{balance:.6f}` RATE\n"
             f"├ Total mined: `{total_mined:.6f}` RATE\n"
-            f"└ Today's ads: `{today_count}/{MAX_DAILY_ADS}`",
+            f"└ Today's mining: {'✅ Done' if mined_today else '⛏️ Available'}",
             parse_mode="Markdown",
         )
 
@@ -712,6 +414,55 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
 
     # ── 하단 키보드 버튼 처리 ──────────────────────────────────
+    if text == "⛏️ Mining":
+        user_data = db.get_user(user_id)
+        if not user_data:
+            await update.message.reply_text("Please start the bot first with /start")
+            return
+
+        today = get_today_utc()
+
+        # 오늘 이미 채굴했으면 차단
+        if has_mined_today(user_data):
+            await update.message.reply_text(
+                "⏳ *Already mined today!*\n\n"
+                "Come back tomorrow (UTC midnight) to mine again.\n\n"
+                f"💰 Current balance: `{user_data.get('balance', 0.0):.6f}` RATE",
+                parse_mode="Markdown",
+            )
+            return
+
+        # 리워드 계산 (공급량 감소 모델)
+        stats = db.get_global_stats()
+        total_mined_global = stats.get("total_mined", 0.0)
+        reward_amount = calculate_reward(total_mined_global)
+
+        if reward_amount <= 0:
+            await update.message.reply_text("⚠️ Total supply has been exhausted.")
+            return
+
+        new_balance  = user_data.get("balance", 0.0) + reward_amount
+        new_personal = user_data.get("total_mined_personal", 0.0) + reward_amount
+
+        db.update_user(user_id, {
+            "balance":              new_balance,
+            "total_mined_personal": new_personal,
+            "last_reset_date":      today,
+            "today_ad_count":       1,
+        })
+        db.add_to_total_mined(reward_amount)
+
+        logger.info(f"[MINE] user={user_id} reward={reward_amount:.6f} balance={new_balance:.6f}")
+
+        await update.message.reply_text(
+            f"⛏️ *Mining Complete!*\n\n"
+            f"💰 Earned: `+{reward_amount:.6f}` RATE\n"
+            f"💼 Balance: `{new_balance:.6f}` RATE\n\n"
+            f"⏳ Come back tomorrow for the next mining!",
+            parse_mode="Markdown",
+        )
+        return
+
     if text == "💰 Balance":
         user_data = db.get_user(user_id)
         if not user_data:
@@ -719,12 +470,12 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         balance = user_data.get("balance", 0.0)
         total_mined = user_data.get("total_mined_personal", 0.0)
-        today_count = get_today_ad_count(user_data)
+        mined_today = has_mined_today(user_data)
         await update.message.reply_text(
             f"💰 *Your Balance*\n\n"
             f"┌ Balance: `{balance:.6f}` RATE\n"
             f"├ Total mined: `{total_mined:.6f}` RATE\n"
-            f"└ Today's ads: `{today_count}/{MAX_DAILY_ADS}`",
+            f"└ Today's mining: {'✅ Done' if mined_today else '⛏️ Available'}",
             parse_mode="Markdown",
         )
         return
@@ -839,71 +590,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
 
-# ── WebApp 데이터 수신 (광고 시청 완료) ──────────────────────
-
-async def web_app_data_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    user_id = str(user.id)
-
-    try:
-        payload = json.loads(update.message.web_app_data.data)
-    except (json.JSONDecodeError, AttributeError):
-        logger.warning(f"Invalid WebApp data from {user_id}")
-        return
-
-    action = payload.get("action")
-
-    if action != "ad_completed":
-        return
-
-    user_data = db.get_user(user_id)
-    if not user_data:
-        await update.message.reply_text("❌ User not found. Please /start again.")
-        return
-
-    # ── 일일 한도 체크 ──
-    today = get_today_utc()
-    today_count = get_today_ad_count(user_data)
-
-    if today_count >= MAX_DAILY_ADS:
-        await update.message.reply_text(
-            "⏰ *Daily limit reached!*\n\nCome back tomorrow (UTC midnight).",
-            parse_mode="Markdown",
-        )
-        return
-
-    # ── 리워드 계산 ──
-    stats = db.get_global_stats()
-    total_mined_global = stats.get("total_mined", 0.0)
-    reward = calculate_reward(total_mined_global)
-
-    if reward <= 0:
-        await update.message.reply_text("⚠️ Total supply exhausted. No more rewards.")
-        return
-
-    # ── DB 업데이트 ──
-    new_balance = user_data.get("balance", 0.0) + reward
-    new_personal = user_data.get("total_mined_personal", 0.0) + reward
-    new_count = today_count + 1
-
-    db.update_user(user_id, {
-        "balance": new_balance,
-        "total_mined_personal": new_personal,
-        "today_ad_count": new_count,
-        "last_reset_date": today,
-    })
-    db.add_to_total_mined(reward)
-
-    remaining_today = MAX_DAILY_ADS - new_count
-    await update.message.reply_text(
-        f"✅ *Mining Reward!*\n\n"
-        f"💰 Earned: `+{reward:.6f}` RATE\n"
-        f"💼 Balance: `{new_balance:.6f}` RATE\n"
-        f"📊 Today: `{new_count}/{MAX_DAILY_ADS}` ads\n"
-        f"⏳ Remaining today: `{remaining_today}` ads",
-        reply_markup=main_menu_keyboard(MINIAPP_URL),
-        parse_mode="Markdown",
-    )
 
 
 # ── /broadcast (관리자 전용) ──────────────────────────────────
@@ -1030,11 +716,6 @@ def main():
     flask_thread.start()
     logger.info("Flask postback server started.")
 
-    # 미지급 보상 자동 재시도 스케줄러
-    retry_thread = threading.Thread(target=retry_pending_rewards, daemon=True)
-    retry_thread.start()
-    logger.info("Pending reward retry scheduler started.")
-
     app = Application.builder().token(TELEGRAM_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -1042,7 +723,6 @@ def main():
     app.add_handler(CommandHandler("website", website))
     app.add_handler(CommandHandler("chatid", chatid_command))
     app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, web_app_data_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
 
     logger.info("RATE NETWORK Bot started.")
