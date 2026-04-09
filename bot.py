@@ -23,7 +23,7 @@ from telegram.ext import (
 
 from config import TELEGRAM_TOKEN, ADMIN_IDS, WEBSITE_URL, MINIAPP_URL, POSTBACK_SECRET, FORUM_GROUP_ID, FORUM_INVITE_LINK, CHAT_MINIAPP_URL
 from firebase_client import FirebaseClient
-from mining import calculate_reward, calculate_referral_reward, get_mining_stats
+from mining import calculate_base_reward, calculate_referral_bonus, get_mining_stats
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -252,20 +252,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             referrer_id = referrer["_id"]
             _register_user(user, referred_by=referrer_id)
 
-            # 추천인 보상 지급
-            stats = db.get_global_stats()
-            total_mined_global = stats.get("total_mined", 0.0)
-            ref_reward = calculate_referral_reward(total_mined_global)
-
+            # 추천인 카운트만 증가 (즉시 보상 없음 — 매일 함께 채굴 시 보너스)
             referrer_data = db.get_user(referrer_id)
             if referrer_data:
-                new_balance = referrer_data.get("balance", 0.0) + ref_reward
-                new_ref_count = referrer_data.get("referral_count", 0) + 1
-                new_ref_earnings = referrer_data.get("referral_earnings", 0.0) + ref_reward
                 db.update_user(referrer_id, {
-                    "balance": new_balance,
-                    "referral_count": new_ref_count,
-                    "referral_earnings": new_ref_earnings,
+                    "referral_count": referrer_data.get("referral_count", 0) + 1,
                 })
                 try:
                     await context.bot.send_message(
@@ -273,7 +264,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         text=(
                             f"🎉 *New Referral!*\n\n"
                             f"Someone joined with your invite link!\n"
-                            f"You earned `{ref_reward:.6f}` RATE coins!"
+                            f"👥 Mine together daily to earn referral bonuses! ⛏️"
                         ),
                         parse_mode="Markdown",
                     )
@@ -283,7 +274,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(
                 f"👋 Welcome to *RATE NETWORK*, {user.first_name}!\n\n"
                 f"✅ You joined with a referral link!\n"
-                f"🪙 Start mining RATE coins by watching short ads.\n\n"
+                f"⛏️ Press *Mining* daily to earn RATE coins.\n"
+                f"💡 The more active referrals you have, the bigger your daily bonus!\n\n"
                 f"Use the buttons below to get started! ⬇️",
                 reply_markup=persistent_keyboard(),
                 parse_mode="Markdown",
@@ -388,20 +380,29 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("Please register first with /start", show_alert=True)
             return
 
-        referrals = user_data.get("referral_count", 0)
-        ref_earnings = user_data.get("referral_earnings", 0.0)
+        referral_count = user_data.get("referral_count", 0)
+        ref_earnings   = user_data.get("referral_earnings", 0.0)
 
-        stats = db.get_global_stats()
-        total_mined_global = stats.get("total_mined", 0.0)
-        est_reward = calculate_referral_reward(total_mined_global)
+        stats            = db.get_global_stats()
+        total_mined_base = stats.get("total_mined_base", stats.get("total_mined", 0.0))
+        total_mined_ref  = stats.get("total_mined_referral", 0.0)
+        base_reward      = calculate_base_reward(total_mined_base)
+        bonus_per_ref    = round(base_reward * 0.25, 6)
+
+        # 오늘 활성 추천인 수
+        today       = get_today_utc()
+        my_referrals = db.get_users_referred_by(user_id)
+        active_today = sum(1 for r in my_referrals if r.get("last_reset_date") == today)
 
         await query.message.reply_text(
-            f"🎁 *My Referral Rewards*\n\n"
-            f"👤 Total referrals: `{referrals}` people\n"
+            f"🎁 *My Referral Stats*\n\n"
+            f"👥 Total referrals: `{referral_count}` people\n"
+            f"⚡️ Active today: `{active_today}` people\n"
             f"💰 Total earned from referrals: `{ref_earnings:.6f}` RATE\n\n"
-            f"📊 *Estimated reward per new referral:*\n"
-            f"└ `{est_reward:.6f}` RATE (= 5× current ad reward)\n\n"
-            f"Invite more friends to earn more! 📨",
+            f"📊 *Current bonus per active referral (per day):*\n"
+            f"└ `+{bonus_per_ref:.6f}` RATE (25% of base reward)\n\n"
+            f"💡 The more referrals mine today, the more YOU earn!\n"
+            f"Invite more friends to grow your daily bonus! 📨",
             parse_mode="Markdown",
         )
 
@@ -432,35 +433,68 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # 리워드 계산 (공급량 감소 모델)
-        stats = db.get_global_stats()
-        total_mined_global = stats.get("total_mined", 0.0)
-        reward_amount = calculate_reward(total_mined_global)
+        # ── 글로벌 통계 ──
+        stats              = db.get_global_stats()
+        total_mined_base   = stats.get("total_mined_base", stats.get("total_mined", 0.0))
+        total_mined_ref    = stats.get("total_mined_referral", 0.0)
 
-        if reward_amount <= 0:
-            await update.message.reply_text("⚠️ Total supply has been exhausted.")
+        # ── 기본 채굴 보상 ──
+        base_reward = calculate_base_reward(total_mined_base)
+        if base_reward <= 0:
+            await update.message.reply_text("⚠️ Mining pool has been exhausted.")
             return
 
-        new_balance  = user_data.get("balance", 0.0) + reward_amount
-        new_personal = user_data.get("total_mined_personal", 0.0) + reward_amount
+        # ── 활성 추천인 카운트 (오늘 채굴한 내 추천인 수) ──
+        referrals     = db.get_users_referred_by(user_id)
+        active_refs   = [r for r in referrals if r.get("last_reset_date") == today]
+        active_count  = len(active_refs)
 
-        db.update_user(user_id, {
+        # ── 추천 보너스 ──
+        bonus_amount = calculate_referral_bonus(base_reward, active_count, total_mined_ref)
+        total_reward = round(base_reward + bonus_amount, 6)
+
+        # ── DB 업데이트 ──
+        new_balance  = user_data.get("balance", 0.0) + total_reward
+        new_personal = user_data.get("total_mined_personal", 0.0) + total_reward
+
+        update_fields = {
             "balance":              new_balance,
             "total_mined_personal": new_personal,
             "last_reset_date":      today,
             "today_ad_count":       1,
-        })
-        db.add_to_total_mined(reward_amount)
+        }
+        if bonus_amount > 0:
+            update_fields["referral_earnings"] = round(
+                user_data.get("referral_earnings", 0.0) + bonus_amount, 6
+            )
+        db.update_user(user_id, update_fields)
+        db.add_to_total_mined(base_amount=base_reward, referral_amount=bonus_amount)
 
-        logger.info(f"[MINE] user={user_id} reward={reward_amount:.6f} balance={new_balance:.6f}")
-
-        await update.message.reply_text(
-            f"⛏️ *Mining Complete!*\n\n"
-            f"💰 Earned: `+{reward_amount:.6f}` RATE\n"
-            f"💼 Balance: `{new_balance:.6f}` RATE\n\n"
-            f"⏳ Come back tomorrow for the next mining!",
-            parse_mode="Markdown",
+        logger.info(
+            f"[MINE] user={user_id} base={base_reward:.6f} "
+            f"bonus={bonus_amount:.6f} active_refs={active_count} "
+            f"total={total_reward:.6f} balance={new_balance:.6f}"
         )
+
+        # ── 메시지 구성 ──
+        msg = (
+            f"⛏️ *Mining Complete!*\n\n"
+            f"💰 Base reward: `+{base_reward:.6f}` RATE\n"
+        )
+        if bonus_amount > 0:
+            msg += (
+                f"👥 Referral bonus: `+{bonus_amount:.6f}` RATE "
+                f"({active_count} active referral{'s' if active_count > 1 else ''})\n"
+                f"✨ Total earned: `+{total_reward:.6f}` RATE\n"
+            )
+        msg += (
+            f"💼 Balance: `{new_balance:.6f}` RATE\n\n"
+            f"⏳ Come back tomorrow for the next mining!"
+        )
+        if active_count == 0 and len(referrals) > 0:
+            msg += f"\n\n💡 You have *{len(referrals)}* referral(s) — get them to mine today to earn bonus!"
+
+        await update.message.reply_text(msg, parse_mode="Markdown")
         return
 
     if text == "💰 Balance":
@@ -505,18 +539,25 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not user_data:
             await update.message.reply_text("Please register first with /start")
             return
-        referrals = user_data.get("referral_count", 0)
-        ref_earnings = user_data.get("referral_earnings", 0.0)
-        stats = db.get_global_stats()
-        total_mined_global = stats.get("total_mined", 0.0)
-        est_reward = calculate_referral_reward(total_mined_global)
+        referral_count = user_data.get("referral_count", 0)
+        ref_earnings   = user_data.get("referral_earnings", 0.0)
+        stats            = db.get_global_stats()
+        total_mined_base = stats.get("total_mined_base", stats.get("total_mined", 0.0))
+        total_mined_ref  = stats.get("total_mined_referral", 0.0)
+        base_reward      = calculate_base_reward(total_mined_base)
+        bonus_per_ref    = round(base_reward * 0.25, 6)
+        today            = get_today_utc()
+        my_referrals     = db.get_users_referred_by(user_id)
+        active_today     = sum(1 for r in my_referrals if r.get("last_reset_date") == today)
         await update.message.reply_text(
-            f"🎁 *My Referral Rewards*\n\n"
-            f"👤 Total referrals: `{referrals}` people\n"
+            f"🎁 *My Referral Stats*\n\n"
+            f"👥 Total referrals: `{referral_count}` people\n"
+            f"⚡️ Active today: `{active_today}` people\n"
             f"💰 Total earned from referrals: `{ref_earnings:.6f}` RATE\n\n"
-            f"📊 *Estimated reward per new referral:*\n"
-            f"└ `{est_reward:.6f}` RATE (= 5× current ad reward)\n\n"
-            f"Invite more friends to earn more! 📨",
+            f"📊 *Current bonus per active referral (per day):*\n"
+            f"└ `+{bonus_per_ref:.6f}` RATE (25% of base reward)\n\n"
+            f"💡 The more referrals mine today, the more YOU earn!\n"
+            f"Invite more friends to grow your daily bonus! 📨",
             parse_mode="Markdown",
         )
         return
@@ -551,34 +592,24 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         _register_user(user, referred_by=referrer_id)
 
-        # 추천인 보상 지급
-        stats = db.get_global_stats()
-        total_mined_global = stats.get("total_mined", 0.0)
-        ref_reward = calculate_referral_reward(total_mined_global)
-
+        # 추천인 카운트만 증가 (즉시 보상 없음 — 매일 함께 채굴 시 보너스)
         referrer_data = db.get_user(referrer_id)
         if referrer_data:
-            new_balance = referrer_data.get("balance", 0.0) + ref_reward
-            new_ref_count = referrer_data.get("referral_count", 0) + 1
-            new_ref_earnings = referrer_data.get("referral_earnings", 0.0) + ref_reward
             db.update_user(referrer_id, {
-                "balance": new_balance,
-                "referral_count": new_ref_count,
-                "referral_earnings": new_ref_earnings,
+                "referral_count": referrer_data.get("referral_count", 0) + 1,
             })
-            # 추천인에게 알림
             try:
                 await context.bot.send_message(
                     chat_id=int(referrer_id),
                     text=(
                         f"🎉 *New Referral!*\n\n"
                         f"Someone joined with your code!\n"
-                        f"You earned `{ref_reward:.6f}` RATE coins!"
+                        f"👥 Mine together daily to earn referral bonuses! ⛏️"
                     ),
                     parse_mode="Markdown",
                 )
             except Exception:
-                pass  # 알림 실패 시 무시
+                pass
 
         await update.message.reply_text(
             f"✅ *Registration complete!*\n\n"

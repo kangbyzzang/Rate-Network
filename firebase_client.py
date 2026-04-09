@@ -129,18 +129,32 @@ class FirebaseClient:
     def get_global_stats(self) -> dict:
         stats = self.get_document("global", "stats")
         if not stats:
-            # 초기값 생성
-            init = {"total_mined": 0.0}
+            init = {"total_mined": 0.0, "total_mined_base": 0.0, "total_mined_referral": 0.0}
             self.set_document("global", "stats", init)
             return init
+        # 구버전 호환: total_mined_base 없으면 total_mined로 대체
+        if "total_mined_base" not in stats:
+            stats["total_mined_base"] = stats.get("total_mined", 0.0)
+        if "total_mined_referral" not in stats:
+            stats["total_mined_referral"] = 0.0
         return stats
 
-    def add_to_total_mined(self, amount: float) -> float:
-        """총 채굴량 업데이트 후 새 값 반환"""
+    def add_to_total_mined(self, base_amount: float, referral_amount: float = 0.0):
+        """기본채굴 풀 + 추천보너스 풀 각각 업데이트"""
         stats = self.get_global_stats()
-        new_total = stats.get("total_mined", 0.0) + amount
-        self.update_document("global", "stats", {"total_mined": new_total})
-        return new_total
+        new_base     = stats.get("total_mined_base", 0.0)     + base_amount
+        new_referral = stats.get("total_mined_referral", 0.0) + referral_amount
+        new_total    = new_base + new_referral
+        self.update_document("global", "stats", {
+            "total_mined":          new_total,
+            "total_mined_base":     new_base,
+            "total_mined_referral": new_referral,
+        })
+
+    def get_users_referred_by(self, referrer_id: str) -> List[dict]:
+        """특정 유저가 추천한 유저 목록 조회"""
+        users = self.get_all_users()
+        return [u for u in users if u.get("referred_by") == referrer_id]
 
     # ── 광고 세션 검증 (Postback) ──────────────────────────
 
