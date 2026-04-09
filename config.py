@@ -14,7 +14,7 @@ ADMIN_IDS = [670738196]
 WEBSITE_URL = "https://rate-network-the-future-of-decentralized-finance-734909496657.us-west1.run.app/"
 
 # 미니앱 URL - GitHub Pages 배포 후 변경
-MINIAPP_URL = "https://kangbyzzang.github.io/Rate-Network"
+MINIAPP_URL = "https://kangbyzzang.github.io/Rate-Network/"
 
 # 채굴 설정
 MAX_DAILY_ADS = 10
