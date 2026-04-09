@@ -292,7 +292,11 @@
     if (!userId || userId === "unknown") {
       icon.textContent  = "⚠️";
       title.textContent = "Open in Telegram";
-      desc.innerHTML    = "Please open this mini app from the Telegram bot to mine RATE coins.";
+      const dbgPlatform = tg.platform || "unknown";
+      const dbgVersion  = tg.version  || "unknown";
+      const dbgInitData = tg.initData ? "present" : "empty";
+      const dbgUser     = JSON.stringify(tg.initDataUnsafe?.user || null);
+      desc.innerHTML    = `Please open this mini app from the Telegram bot.<br><small style="opacity:.6;font-size:11px">platform=${dbgPlatform} ver=${dbgVersion} initData=${dbgInitData} user=${dbgUser}</small>`;
       setStatus("⚠️ User not identified. Open from Telegram.", "error");
     } else {
       // SDK 로드 완료 후 프리로드 시작
