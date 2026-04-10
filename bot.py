@@ -757,7 +757,10 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
 
     logger.info("RATE NETWORK Bot started.")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    app.run_polling(
+        allowed_updates=Update.ALL_TYPES,
+        drop_pending_updates=True,   # 시작 시 밀린 업데이트 무시 (충돌 방지)
+    )
 
 
 if __name__ == "__main__":
