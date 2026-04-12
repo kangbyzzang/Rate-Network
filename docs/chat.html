@@ -2,178 +2,216 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>RATE NETWORK Chat</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:       var(--tg-theme-bg-color, #ffffff);
+    --bg2:      var(--tg-theme-secondary-bg-color, #f1f1f1);
+    --text:     var(--tg-theme-text-color, #000000);
+    --hint:     var(--tg-theme-hint-color, #999999);
+    --link:     var(--tg-theme-link-color, #2481cc);
+    --accent:   var(--tg-theme-button-color, #2481cc);
+    --btn-text: var(--tg-theme-button-text-color, #ffffff);
+    --divider:  var(--tg-theme-secondary-bg-color, #e0e0e0);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    background: #0f0f0f;
-    color: #fff;
+    background: var(--bg2);
+    color: var(--text);
     min-height: 100vh;
   }
-  .header {
-    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-    padding: 16px;
-    text-align: center;
-    border-bottom: 1px solid #2a2a4a;
+
+  /* ── 검색바 ── */
+  .search-wrap {
+    background: var(--bg2);
+    padding: 8px 12px;
     position: sticky;
     top: 0;
     z-index: 10;
   }
-  .header h1 { font-size: 18px; font-weight: 700; color: #a78bfa; }
-  .header p  { font-size: 12px; color: #888; margin-top: 2px; }
-  .search-wrap {
-    padding: 12px 16px;
-    background: #111;
-    position: sticky;
-    top: 70px;
-    z-index: 9;
-  }
   .search-box {
     width: 100%;
-    padding: 10px 16px;
-    border-radius: 12px;
-    border: 1px solid #2a2a4a;
-    background: #1a1a2e;
-    color: #fff;
-    font-size: 14px;
+    padding: 8px 14px;
+    border-radius: 10px;
+    border: none;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 15px;
     outline: none;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
   }
-  .search-box::placeholder { color: #555; }
-  .search-container { position: relative; }
-  .section-title {
-    padding: 12px 16px 6px;
-    font-size: 11px;
-    color: #666;
+  .search-box::placeholder { color: var(--hint); }
+
+  /* ── 섹션 헤더 ── */
+  .section-header {
+    padding: 18px 16px 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
     text-transform: uppercase;
-    letter-spacing: 1px;
+    letter-spacing: 0.5px;
   }
-  .room-list { padding: 0 16px 80px; }
-  .room-card {
+
+  /* ── 리스트 그룹 ── */
+  .list-group {
+    background: var(--bg);
+    border-radius: 12px;
+    margin: 0 12px 8px;
+    overflow: hidden;
+  }
+
+  /* ── 리스트 아이템 ── */
+  .list-item {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 12px 14px;
-    background: #1a1a2e;
-    border-radius: 12px;
-    margin-bottom: 8px;
-    border: 1px solid #2a2a4a;
-    transition: border-color 0.2s;
-  }
-  .room-card:hover { border-color: #a78bfa; }
-  .room-info { display: flex; align-items: center; gap: 10px; }
-  .room-flag { font-size: 28px; line-height: 1; }
-  .room-name { font-size: 14px; font-weight: 600; color: #e2e8f0; }
-  .room-meta { font-size: 11px; color: #666; margin-top: 2px; }
-  .btn {
-    padding: 7px 16px;
-    border-radius: 20px;
-    border: none;
-    font-size: 13px;
-    font-weight: 600;
+    padding: 10px 14px;
+    gap: 12px;
+    position: relative;
     cursor: pointer;
-    transition: opacity 0.2s;
+    transition: background 0.15s;
+    user-select: none;
+  }
+  .list-item:active { background: var(--bg2); }
+  .list-item + .list-item::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 58px; right: 0;
+    height: 0.5px;
+    background: var(--divider);
+  }
+
+  .flag-circle {
+    width: 46px; height: 46px;
+    border-radius: 50%;
+    background: var(--bg2);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 26px;
+    flex-shrink: 0;
+  }
+
+  .item-body { flex: 1; min-width: 0; }
+  .item-name {
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--text);
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
-  .btn:active { opacity: 0.7; }
-  .btn-join   { background: #a78bfa; color: #fff; }
-  .btn-create { background: transparent; color: #a78bfa; border: 1px solid #a78bfa; }
-  .divider {
-    height: 1px;
-    background: #2a2a4a;
-    margin: 8px 0 12px;
+  .item-sub {
+    font-size: 13px;
+    color: var(--hint);
+    margin-top: 1px;
   }
-  .empty-state {
-    text-align: center;
-    padding: 40px 20px;
-    color: #555;
-  }
-  .empty-state p { font-size: 14px; }
-  .toast {
-    position: fixed;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: #a78bfa;
-    color: #fff;
-    padding: 10px 20px;
+
+  /* ── 오른쪽 액션 ── */
+  .item-action { flex-shrink: 0; }
+
+  .badge-active {
+    background: #4cd96422;
+    color: #26a65b;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 8px;
     border-radius: 20px;
+  }
+
+  .btn-create {
     font-size: 13px;
     font-weight: 600;
-    opacity: 0;
-    transition: opacity 0.3s;
-    z-index: 100;
-    white-space: nowrap;
+    color: var(--accent);
+    background: none;
+    border: none;
+    padding: 4px 0;
+    cursor: pointer;
   }
-  .toast.show { opacity: 1; }
+
+  /* ── 로딩 ── */
   .loading {
-    text-align: center;
-    padding: 40px;
-    color: #555;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 80px 20px;
+    gap: 14px;
+    color: var(--hint);
+    font-size: 14px;
   }
   .spinner {
-    width: 32px; height: 32px;
-    border: 3px solid #2a2a4a;
-    border-top-color: #a78bfa;
+    width: 28px; height: 28px;
+    border: 2.5px solid var(--divider);
+    border-top-color: var(--accent);
     border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    margin: 0 auto 12px;
+    animation: spin 0.7s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .badge {
-    background: #22c55e22;
-    color: #22c55e;
-    font-size: 10px;
-    padding: 2px 7px;
-    border-radius: 10px;
-    margin-left: 6px;
-    font-weight: 600;
+
+  /* ── 빈 상태 ── */
+  .empty {
+    padding: 30px 20px;
+    text-align: center;
+    color: var(--hint);
+    font-size: 14px;
+    background: var(--bg);
+    border-radius: 12px;
+    margin: 0 12px 8px;
   }
+
+  /* ── 토스트 ── */
+  .toast {
+    position: fixed;
+    bottom: calc(20px + env(safe-area-inset-bottom));
+    left: 50%; transform: translateX(-50%) translateY(10px);
+    background: rgba(0,0,0,0.75);
+    color: #fff;
+    padding: 9px 18px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    opacity: 0;
+    transition: opacity 0.25s, transform 0.25s;
+    z-index: 999;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  .bottom-pad { height: 24px; }
 </style>
 </head>
 <body>
 
-<div class="header">
-  <h1>💬 RATE NETWORK Chat</h1>
-  <p>Join or create a country chat room</p>
-</div>
-
 <div class="search-wrap">
-  <div class="search-container">
-    <input class="search-box" id="searchInput" type="text" placeholder="Search countries..." autocomplete="off">
-  </div>
+  <input class="search-box" id="searchInput" type="text" placeholder="Search countries..." autocomplete="off">
 </div>
 
 <div id="loadingState" class="loading">
   <div class="spinner"></div>
-  <p>Loading rooms...</p>
+  <span>Loading rooms...</span>
 </div>
 
-<div id="mainContent" style="display:none;">
-  <div id="activeSection">
-    <div class="section-title">🟢 Active Rooms</div>
-    <div class="room-list" id="activeRooms"></div>
-  </div>
-  <div class="divider" style="margin:0 16px;"></div>
-  <div id="availableSection">
-    <div class="section-title">✨ Create a Room</div>
-    <div class="room-list" id="availableRooms"></div>
-  </div>
-</div>
+<div id="mainContent" style="display:none;"></div>
 
+<div class="bottom-pad"></div>
 <div class="toast" id="toast"></div>
 
 <script>
 const tg = window.Telegram?.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
 
-const userId   = tg?.initDataUnsafe?.user?.id?.toString() || "unknown";
+// userId: initDataUnsafe 우선, 없으면 URL 파라미터, 없으면 null
+const userId = tg?.initDataUnsafe?.user?.id?.toString()
+  || new URLSearchParams(location.search).get("uid")
+  || null;
+
 const API_BASE = "https://worker-production-7fdd.up.railway.app";
 const SECRET   = "ratenetwork_secret_2026";
 
-// ── 전체 국가 목록 ─────────────────────────────────────────
+// ── 전체 국가 목록 ──────────────────────────────────────────
 const ALL_COUNTRIES = [
   {code:"AF",name:"Afghanistan",flag:"🇦🇫"},
   {code:"AL",name:"Albania",flag:"🇦🇱"},
@@ -262,6 +300,8 @@ const ALL_COUNTRIES = [
   {code:"KZ",name:"Kazakhstan",flag:"🇰🇿"},
   {code:"KE",name:"Kenya",flag:"🇰🇪"},
   {code:"KI",name:"Kiribati",flag:"🇰🇮"},
+  {code:"KR",name:"South Korea",flag:"🇰🇷"},
+  {code:"KP",name:"North Korea",flag:"🇰🇵"},
   {code:"KW",name:"Kuwait",flag:"🇰🇼"},
   {code:"KG",name:"Kyrgyzstan",flag:"🇰🇬"},
   {code:"LA",name:"Laos",flag:"🇱🇦"},
@@ -310,6 +350,7 @@ const ALL_COUNTRIES = [
   {code:"PH",name:"Philippines",flag:"🇵🇭"},
   {code:"PL",name:"Poland",flag:"🇵🇱"},
   {code:"PT",name:"Portugal",flag:"🇵🇹"},
+  {code:"PS",name:"Palestine",flag:"🇵🇸"},
   {code:"QA",name:"Qatar",flag:"🇶🇦"},
   {code:"RO",name:"Romania",flag:"🇷🇴"},
   {code:"RU",name:"Russia",flag:"🇷🇺"},
@@ -361,120 +402,116 @@ const ALL_COUNTRIES = [
   {code:"VU",name:"Vanuatu",flag:"🇻🇺"},
   {code:"VE",name:"Venezuela",flag:"🇻🇪"},
   {code:"VN",name:"Vietnam",flag:"🇻🇳"},
+  {code:"XK",name:"Kosovo",flag:"🇽🇰"},
   {code:"YE",name:"Yemen",flag:"🇾🇪"},
   {code:"ZM",name:"Zambia",flag:"🇿🇲"},
   {code:"ZW",name:"Zimbabwe",flag:"🇿🇼"},
-  {code:"KR",name:"South Korea",flag:"🇰🇷"},
-  {code:"KP",name:"North Korea",flag:"🇰🇵"},
-  {code:"PS",name:"Palestine",flag:"🇵🇸"},
-  {code:"XK",name:"Kosovo",flag:"🇽🇰"},
 ];
 
-let activeRooms = {};   // country_code → room 객체
+let activeRooms = {};
 let query = "";
+
+// ── 링크 열기 (Telegram 내장 or 일반 브라우저) ──────────────
+function openLink(url) {
+  if (tg?.openLink) tg.openLink(url);
+  else window.open(url, "_blank");
+}
 
 // ── 초기 로드 ──────────────────────────────────────────────
 async function loadRooms() {
   try {
     const res  = await fetch(`${API_BASE}/chat/rooms`);
     const data = await res.json();
-    activeRooms = {};
     (data.rooms || []).forEach(r => { activeRooms[r.country_code] = r; });
   } catch(e) {
     console.error("Failed to load rooms:", e);
   }
-  document.getElementById("loadingState").style.display  = "none";
-  document.getElementById("mainContent").style.display   = "block";
+  document.getElementById("loadingState").style.display = "none";
+  document.getElementById("mainContent").style.display  = "block";
   renderAll();
 }
 
+// ── 렌더링 ─────────────────────────────────────────────────
 function renderAll() {
-  const q = query.toLowerCase();
+  const q        = query.toLowerCase();
   const filtered = ALL_COUNTRIES.filter(c =>
     c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q)
   );
 
-  const active    = filtered.filter(c => activeRooms[c.code]);
+  const active    = filtered.filter(c =>  activeRooms[c.code]);
   const available = filtered.filter(c => !activeRooms[c.code]);
 
-  // Active rooms
-  const activeEl = document.getElementById("activeRooms");
-  document.getElementById("activeSection").style.display = active.length ? "block" : "none";
-  activeEl.innerHTML = active.map(c => {
-    const r = activeRooms[c.code];
-    return `
-    <div class="room-card">
-      <div class="room-info">
-        <span class="room-flag">${c.flag}</span>
-        <div>
-          <div class="room-name">${c.name} <span class="badge">ACTIVE</span></div>
-          <div class="room-meta">Created by user #${r.creator_id?.slice(-4) || "???"}</div>
-        </div>
-      </div>
-      <button class="btn btn-join" onclick="joinRoom('${c.code}')">Join</button>
-    </div>`;
-  }).join("");
+  let html = "";
 
-  // Available (create)
-  const availEl = document.getElementById("availableRooms");
-  document.getElementById("availableSection").style.display = available.length ? "block" : "none";
-  availEl.innerHTML = available.map(c => `
-    <div class="room-card">
-      <div class="room-info">
-        <span class="room-flag">${c.flag}</span>
-        <div>
-          <div class="room-name">${c.name}</div>
-          <div class="room-meta">No room yet</div>
+  if (active.length) {
+    html += `<div class="section-header">Active Rooms</div><div class="list-group">`;
+    html += active.map(c => {
+      const r = activeRooms[c.code];
+      return `
+      <div class="list-item" onclick="joinRoom('${c.code}','${escHtml(r.invite_link || '')}')">
+        <div class="flag-circle">${c.flag}</div>
+        <div class="item-body">
+          <div class="item-name">${escHtml(c.name)}</div>
+          <div class="item-sub">Tap to join</div>
         </div>
-      </div>
-      <button class="btn btn-create" onclick="createRoom('${c.code}','${c.name}','${c.flag}')">Create</button>
-    </div>
-  `).join("");
-
-  if (filtered.length === 0) {
-    activeEl.innerHTML  = "";
-    availEl.innerHTML   = `<div class="empty-state"><p>No countries found for "${query}"</p></div>`;
-    document.getElementById("activeSection").style.display    = "none";
-    document.getElementById("availableSection").style.display = "block";
+        <div class="item-action"><span class="badge-active">OPEN</span></div>
+      </div>`;
+    }).join("");
+    html += `</div>`;
   }
+
+  if (available.length) {
+    html += `<div class="section-header">Create a Room</div><div class="list-group">`;
+    html += available.map(c => `
+      <div class="list-item" onclick="createRoom('${c.code}','${escHtml(c.name)}','${c.flag}')">
+        <div class="flag-circle">${c.flag}</div>
+        <div class="item-body">
+          <div class="item-name">${escHtml(c.name)}</div>
+          <div class="item-sub">No room yet — be the first!</div>
+        </div>
+        <div class="item-action"><button class="btn-create">Create</button></div>
+      </div>`
+    ).join("");
+    html += `</div>`;
+  }
+
+  if (!filtered.length) {
+    html = `<div class="empty">No countries found for "${escHtml(query)}"</div>`;
+  }
+
+  document.getElementById("mainContent").innerHTML = html;
 }
 
-// ── 방 참여 ────────────────────────────────────────────────
-async function joinRoom(code) {
-  showToast("Sending invite link to Telegram...");
-  try {
-    const res  = await fetch(`${API_BASE}/chat/join`, {
-      method: "POST",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({ user_id: userId, country_code: code, secret: SECRET })
-    });
-    const data = await res.json();
-    if (data.ok) showToast("✅ Check your Telegram DM for the invite link!");
-    else         showToast("❌ " + (data.error || "Failed"));
-  } catch(e) {
-    showToast("❌ Connection error");
-  }
+// ── 방 참여: 바로 링크 열기 (user_id 불필요) ───────────────
+function joinRoom(code, inviteLink) {
+  const link = inviteLink || activeRooms[code]?.invite_link;
+  if (!link) { showToast("❌ Link not found"); return; }
+  openLink(link);
 }
 
 // ── 방 생성 ────────────────────────────────────────────────
 async function createRoom(code, name, flag) {
-  if (userId === "unknown") {
-    showToast("⚠️ Please open from Telegram");
-    return;
-  }
   showToast("Creating room...");
+  const uid = userId || "0";  // userId 없어도 방 생성은 진행
   try {
     const res  = await fetch(`${API_BASE}/chat/create_room`, {
       method: "POST",
       headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({ user_id: userId, country_code: code, country_name: name, country_flag: flag, secret: SECRET })
+      body: JSON.stringify({
+        user_id: uid,
+        country_code: code,
+        country_name: name,
+        country_flag: flag,
+        secret: SECRET
+      })
     });
     const data = await res.json();
     if (data.ok) {
       activeRooms[code] = data.room;
       renderAll();
-      if (data.already_exists) showToast("✅ Room already exists! Invite link sent.");
-      else                     showToast("🎉 Room created! Check your Telegram DM!");
+      const link = data.room?.invite_link;
+      showToast(data.already_exists ? "✅ Room already exists!" : "🎉 Room created!");
+      if (link) setTimeout(() => openLink(link), 800);
     } else {
       showToast("❌ " + (data.error || "Failed"));
     }
@@ -483,19 +520,26 @@ async function createRoom(code, name, flag) {
   }
 }
 
-// ── 검색 ──────────────────────────────────────────────────
+// ── 검색 ───────────────────────────────────────────────────
 document.getElementById("searchInput").addEventListener("input", function() {
   query = this.value.trim();
   renderAll();
 });
 
-// ── 토스트 ────────────────────────────────────────────────
+// ── 토스트 ─────────────────────────────────────────────────
 function showToast(msg) {
   const el = document.getElementById("toast");
   el.textContent = msg;
   el.classList.add("show");
-  clearTimeout(el._timer);
-  el._timer = setTimeout(() => el.classList.remove("show"), 3000);
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove("show"), 2500);
+}
+
+// ── XSS 방지 ───────────────────────────────────────────────
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 }
 
 loadRooms();
