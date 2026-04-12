@@ -26,3 +26,6 @@ POSTBACK_SECRET = os.environ.get("POSTBACK_SECRET", "ratenetwork_secret_2026")
 FORUM_GROUP_ID = -1003822841308
 FORUM_INVITE_LINK = "https://t.me/+ZrpJQQh2L7hmMmI1"
 CHAT_MINIAPP_URL = "https://kangbyzzang.github.io/Rate-Network/chat.html"
+
+# DEX 거래소 페이지
+DEX_URL = "https://dexscreener.com/solana/fwsq2sphrt7wrghftpeagw7bpaum4kxmdjl1krwjuuzw"

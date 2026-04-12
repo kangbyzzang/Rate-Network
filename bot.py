@@ -21,7 +21,7 @@ from telegram.ext import (
     CallbackQueryHandler, filters, ContextTypes
 )
 
-from config import TELEGRAM_TOKEN, ADMIN_IDS, WEBSITE_URL, MINIAPP_URL, POSTBACK_SECRET, FORUM_GROUP_ID, FORUM_INVITE_LINK, CHAT_MINIAPP_URL
+from config import TELEGRAM_TOKEN, ADMIN_IDS, WEBSITE_URL, MINIAPP_URL, POSTBACK_SECRET, FORUM_GROUP_ID, FORUM_INVITE_LINK, CHAT_MINIAPP_URL, DEX_URL
 from firebase_client import FirebaseClient
 from mining import calculate_base_reward, calculate_referral_bonus, get_mining_stats
 
@@ -219,6 +219,7 @@ def persistent_keyboard() -> ReplyKeyboardMarkup:
             [KeyboardButton("💬 Chat", web_app=WebAppInfo(url=CHAT_MINIAPP_URL))],
             [KeyboardButton("💰 Balance"), KeyboardButton("📨 Invite")],
             [KeyboardButton("🎁 Referrals"), KeyboardButton("🌐 Website")],
+            [KeyboardButton("📈 DEX")],
         ],
         resize_keyboard=True,
         is_persistent=True,
@@ -293,7 +294,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ])
     await update.message.reply_text(
         f"👋 Welcome to *RATE NETWORK*, {user.first_name}!\n\n"
-        "🪙 Mine RATE coins by watching short ads.\n\n"
+        "🪙 Mine RATE coins daily — just press the Mining button!\n\n"
         "Did someone invite you?",
         reply_markup=keyboard,
         parse_mode="Markdown",
@@ -366,7 +367,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Share this message to invite friends:\n\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"🚀 Start mining Rate effortlessly on Telegram!\n\n"
-            f"💎 Mine RATE coins just by watching short ads.\n"
+            f"💎 Mine RATE coins daily — just press the button!\n"
             f"👥 Join now and start earning:\n"
             f"{invite_link}\n"
             f"━━━━━━━━━━━━━━━━━━",
@@ -526,7 +527,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Share this message to invite friends:\n\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"🚀 Start mining Rate effortlessly on Telegram!\n\n"
-            f"💎 Mine RATE coins just by watching short ads.\n"
+            f"💎 Mine RATE coins daily — just press the button!\n"
             f"👥 Join now and start earning:\n"
             f"{invite_link}\n"
             f"━━━━━━━━━━━━━━━━━━",
@@ -568,6 +569,17 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🌐 Visit RATE NETWORK", url=WEBSITE_URL)]
             ]),
+        )
+        return
+
+    if text == "📈 DEX":
+        await update.message.reply_text(
+            "📈 *RATE on DexScreener*\n\n"
+            "Trade RATE tokens on Solana DEX:",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📈 View RATE on DexScreener", url=DEX_URL)]
+            ]),
+            parse_mode="Markdown",
         )
         return
 
