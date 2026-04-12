@@ -21,7 +21,7 @@ from telegram.ext import (
     CallbackQueryHandler, filters, ContextTypes
 )
 
-from config import TELEGRAM_TOKEN, ADMIN_IDS, WEBSITE_URL, MINIAPP_URL, POSTBACK_SECRET, FORUM_GROUP_ID, FORUM_INVITE_LINK, CHAT_MINIAPP_URL, DEX_URL
+from config import TELEGRAM_TOKEN, ADMIN_IDS, WEBSITE_URL, MINIAPP_URL, POSTBACK_SECRET, FORUM_GROUP_ID, FORUM_INVITE_LINK, CHAT_MINIAPP_URL, DEX_URL, X_URL
 from firebase_client import FirebaseClient
 from mining import calculate_base_reward, calculate_referral_bonus, get_mining_stats
 
@@ -219,7 +219,7 @@ def persistent_keyboard() -> ReplyKeyboardMarkup:
             [KeyboardButton("💬 Chat", web_app=WebAppInfo(url=CHAT_MINIAPP_URL))],
             [KeyboardButton("💰 Balance"), KeyboardButton("📨 Invite")],
             [KeyboardButton("🎁 Referrals"), KeyboardButton("🌐 Website")],
-            [KeyboardButton("📈 DEX")],
+            [KeyboardButton("📈 DEX"), KeyboardButton("𝕏 Follow us")],
         ],
         resize_keyboard=True,
         is_persistent=True,
@@ -578,6 +578,17 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Trade RATE tokens on Solana DEX:",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("📈 View RATE on DexScreener", url=DEX_URL)]
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+
+    if text == "𝕏 Follow us":
+        await update.message.reply_text(
+            "𝕏 *Follow RATE NETWORK on X*\n\n"
+            "Stay updated with the latest news and announcements:",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("𝕏 Follow @rate_network", url=X_URL)]
             ]),
             parse_mode="Markdown",
         )

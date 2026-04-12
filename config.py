@@ -29,3 +29,4 @@ CHAT_MINIAPP_URL = "https://kangbyzzang.github.io/Rate-Network/chat.html"
 
 # DEX 거래소 페이지
 DEX_URL = "https://dexscreener.com/solana/fwsq2sphrt7wrghftpeagw7bpaum4kxmdjl1krwjuuzw"
+X_URL = "https://x.com/rate_network"
